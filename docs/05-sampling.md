@@ -93,3 +93,36 @@ python src/sample.py --run runs/s10m --prompt "Once upon a time" \
 - top-k 和 top-p 区别？各自的优缺点？
 - 为什么 greedy 解码容易重复？
 - 上下文超过 512 个 token 后怎么办？
+
+## 实测结果（2026-11-15，阶段 5 验收）
+
+实现：`src/sample.py`（`load_model` / `sample_next` / `generate` / `generate_text` / `main`），测试 `tests/test_sample.py`（6 项全部通过）。没有做 KV cache。
+
+`runs/<name>/` 里只有 `meta.json`，分词器文件 `tokenizer.json` 在 `data/processed/`。所以 `load_model` 先在 run 目录里找分词器，找不到就去配置里的 `data.dir` 找，不往 `runs/` 里写任何东西。
+
+### 验收清单
+
+- [x] 同一 `--seed` 两次运行结果完全相同（debug，seed 42，逐字一致）。
+- [x] `--temperature 0`（seed 1、seed 2）和 `--top_k 1`（seed 3）三次输出完全相同。
+- [x] 3900 个 token 的长 prompt 不报错，模型只看最后 512 个。
+- [x] debug 模型对 "Once upon a time" 生成大体像英文的故事片段。
+- [x] `pytest tests/test_sample.py`：top-k / top-p 只会抽到允许的 token，p 很小时至少保留 1 个。
+
+### 样例（prompt "Once upon a time"，T=0.8，top-k 50，top-p 0.95，seed 42，每条 120 token）
+
+**debug（5.39M）**：
+> , there was a little boy named Timmy. Timmy loved to play with his toy for help. They all saw a big hay and flowers. "Sure, Lily!" Lily said. "Let's go home," Lily said him. …
+
+句子单独看基本合乎语法，但上下文接不上：人物从 Timmy 突然换成 Lily，还有"said him"这样的错误。
+
+**s10m（13.99M）**：
+> , there was a little boy named Timmy. Timmy loved to play with his toy car all day long. One day, Timmy's mommy gave him a big package of a new toy car. … He played with it all day long, but he was not happy with his new toy car. …
+
+**s100m（105.92M）**：
+> , there was a little boy named Timmy. Timmy loved to play with his toy cars and trucks all day long. One day, Timmy's mom told him it was time to take a bath. Timmy didn't want to stop playing, but he knew he had to listen to his mom. As Timmy was taking his bath, he noticed that his favorite toy truck was missing. …
+
+s10m 已经能写出连贯的段落，但会自相矛盾（"he realized that it was very popular" 和后面的情节对不上）。s100m 的情节有因果关系（洗澡 → 发现玩具不见了 → 哭 → 妈妈来问），人物和前后文也保持一致。规模对比的系统分析放在阶段 6。
+
+### 速度
+
+RTX 5060 Ti，bf16，3 条样本 × 120 token 一起生成：s10m 约 80 tokens/s，s100m 约 170 tokens/s。计时包含 CUDA 第一次启动内核的预热时间，所以先跑的、模型更小的反而显得更慢，这里的数字只能当数量级看。没有 KV cache 时，每一步都要把整段序列重新算一遍。
