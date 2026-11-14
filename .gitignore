@@ -1,6 +1,8 @@
 # 数据（大文件不进 git）
 data/raw/
 data/processed/*.bin
+data/processed_char/*.bin
+data/processed_char/*.log
 
 # checkpoint
 runs/*/ckpt*.pt

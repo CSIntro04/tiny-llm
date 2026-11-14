@@ -53,9 +53,10 @@ def load_model(run_dir: str, ckpt: str = "ckpt_best.pt",
     if device.startswith("cuda") and not torch.cuda.is_available():
         device = "cpu"
     run = Path(run_dir)
-    # map_location：checkpoint 在 GPU 上保存，没有 GPU 时也能加载到 CPU
+    # map_location="cpu"：先整体读到内存，只把模型权重搬上 GPU。
+    # checkpoint 里还有 AdamW 的 m、v（是权重的 2 倍大），直接读到 GPU 会白占显存
     # weights_only=False：checkpoint 里还有 python 随机数状态等非张量对象（文件是自己训练产生的，可信）
-    state = torch.load(run / ckpt, map_location=device, weights_only=False)
+    state = torch.load(run / ckpt, map_location="cpu", weights_only=False)
     cfg = state["config"]
     model = build_model(cfg)
     model.load_state_dict(state["model"])

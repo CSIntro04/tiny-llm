@@ -1,0 +1,28 @@
+# 实验 C：字符级分词。除分词器（及随之变化的 vocab_size、数据目录、混合权重写法）和本地 micro-batch 外，与 s10m.yaml 完全相同。
+name: s10m_char
+out_dir: runs
+model: { preset: s10m, vocab_size: 336, block_size: 512, dropout: 0.0, bias: true, grad_ckpt: false }  # 336 = data/processed_char/meta.json 的字符词表
+data:
+  dir: data/processed_char  # python src/prepare.py --tokenizer char --shards 1 --out_dir data/processed_char
+  sources: [smollm, tinystories]
+  # 只处理了每个来源 1 个分片，自然比例会变成 52:48；这里显式写成和 BPE 数据相同的 70:30，
+  # 两种分词器看到的文本构成才一样（BPE 下两个来源每 token 的字符数几乎相同，token 比例≈文本比例）
+  mix: { smollm: 0.7028, tinystories: 0.2972 }
+train:
+  batch_size: 64          # 本地 RTX 5060 Ti 8GB 训练
+  grad_accum: 4           # 有效 batch = 64 × 4 × 512 = 131072 token/步，与 s10m 相同
+  max_iters: 2290         # 3 亿 token（字符级下 ≈ 3 亿字符，只有 BPE 版看到文本量的约 1/4）
+  stop_iter: null
+  lr: 1.0e-3
+  min_lr: 1.0e-4
+  warmup_iters: 200
+  weight_decay: 0.1
+  betas: [0.9, 0.95]
+  grad_clip: 1.0
+  eval_interval: 200
+  eval_iters: 50
+  ckpt_tokens: [1.0e+8, 3.0e+8]
+  log_interval: 10
+seed: 1337
+dtype: bfloat16
+compile: true

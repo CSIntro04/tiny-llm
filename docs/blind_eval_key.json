@@ -1,0 +1,152 @@
+{
+  "S01": {
+    "run": "s50m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "The little dog was sad because"
+  },
+  "S02": {
+    "run": "s10m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "The French Revolution began"
+  },
+  "S03": {
+    "run": "s10m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "The water cycle describes"
+  },
+  "S04": {
+    "run": "s10m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "The little dog was sad because"
+  },
+  "S05": {
+    "run": "s100m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "The water cycle describes"
+  },
+  "S06": {
+    "run": "s10m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "Photosynthesis is the process"
+  },
+  "S07": {
+    "run": "s100m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "Lily wanted to"
+  },
+  "S08": {
+    "run": "s100m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "One day, Tom and his mom went to"
+  },
+  "S09": {
+    "run": "s100m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "The French Revolution began"
+  },
+  "S10": {
+    "run": "s10m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "There was a big tree in the park"
+  },
+  "S11": {
+    "run": "s50m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "Lily wanted to"
+  },
+  "S12": {
+    "run": "s10m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "Lily wanted to"
+  },
+  "S13": {
+    "run": "s10m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "To stay healthy, people should"
+  },
+  "S14": {
+    "run": "s10m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "Once upon a time"
+  },
+  "S15": {
+    "run": "s100m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "There was a big tree in the park"
+  },
+  "S16": {
+    "run": "s50m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "There was a big tree in the park"
+  },
+  "S17": {
+    "run": "s50m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "Photosynthesis is the process"
+  },
+  "S18": {
+    "run": "s100m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "Photosynthesis is the process"
+  },
+  "S19": {
+    "run": "s50m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "The French Revolution began"
+  },
+  "S20": {
+    "run": "s50m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "One day, Tom and his mom went to"
+  },
+  "S21": {
+    "run": "s50m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "In mathematics, a prime number"
+  },
+  "S22": {
+    "run": "s100m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "The little dog was sad because"
+  },
+  "S23": {
+    "run": "s50m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "To stay healthy, people should"
+  },
+  "S24": {
+    "run": "s10m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "In mathematics, a prime number"
+  },
+  "S25": {
+    "run": "s100m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "To stay healthy, people should"
+  },
+  "S26": {
+    "run": "s100m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "Once upon a time"
+  },
+  "S27": {
+    "run": "s100m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "In mathematics, a prime number"
+  },
+  "S28": {
+    "run": "s50m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "The water cycle describes"
+  },
+  "S29": {
+    "run": "s50m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "Once upon a time"
+  },
+  "S30": {
+    "run": "s10m",
+    "ckpt": "ckpt_best.pt",
+    "prompt": "One day, Tom and his mom went to"
+  }
+}

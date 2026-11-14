@@ -1,0 +1,203 @@
+# 对比实验结果
+
+实验计划见 [06-experiments.md](06-experiments.md)。本文件记录实际结果。所有数字和图都可以用文末命令重新生成。
+
+| 实验 | 变量 | 状态 |
+|---|---|---|
+| A | 模型规模 0.01B / 0.05B / 0.1B | ✅ 自动指标完成；人工盲评**待组员打分** |
+| B | 采样参数（temperature × top-k，greedy，top-p） | ✅ |
+| C | 分词方式（字符级 vs BPE） | ⏳ 数据和配置已备好，冒烟通过，**正式训练待确认**（本地约 15 分钟） |
+
+---
+
+## 实验 A：模型规模
+
+### 设置
+
+| 固定 | 值 |
+|---|---|
+| 数据 | SmolLM 1B 子集 + TinyStories，同一组 bin，自然比例混合（70.3% : 29.7%） |
+| 分词器 | 同一个 BPE-8192 |
+| 有效 batch | 256 × 512 = 131072 token/步 |
+| 调度 | warmup 200 步 + cosine 衰减到 lr/10 |
+| 其余 | AdamW β=(0.9, 0.95)，weight decay 0.1，grad clip 1.0，seed 1337，bf16 |
+
+| 变化 | s10m | s50m | s100m |
+|---|---|---|---|
+| 层 / 维 / 头 | 6 / 384 / 6 | 10 / 640 / 10 | 14 / 768 / 12 |
+| 峰值 lr | 1e-3 | 6e-4 | 4e-4 |
+| 训练 token | 3 亿 | 10 亿 | 15 亿 |
+| 配置 | `configs/s10m.yaml` | `configs/s50m.yaml` | `configs/s100m.yaml` |
+
+三个模型都在云端 RTX 5090 上一次训练完成（2026-11-15），中间没有续训。
+
+### 最终结果
+
+| 模型 | 总参数 | 非 emb 参数 | 训练 token | val（加权） | val SmolLM | val TinyStories | 困惑度 | 训练时长 | 平均 tok/s | 显存峰值 | ckpt 文件 / 仅权重 | 生成速度* |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| s10m | 13.99M | 10.65M | 0.30B | 3.098 | 3.629 | 1.845 | 22.2 | 4.6 min | 1117k | 9.2 GB | 168 / 56 MB | ~360 tok/s |
+| s50m | 54.81M | 49.24M | 1.00B | 2.543 | 3.016 | 1.426 | 12.7 | 45.2 min | 370k | 10.4 GB | 658 / 219 MB | ~290 tok/s |
+| s100m | 105.92M | 99.23M | 1.50B | 2.409 | 2.865 | 1.330 | 11.1 | 115.9 min | 216k | 16.5 GB | 1271 / 424 MB | ~200 tok/s |
+
+- val 取训练结束时最后一次评估（与 `ckpt_best.pt` 相同，三个模型的 val loss 都是一路下降，最好的就是最后的）。表由 `src/plot_compare.py` 生成，原表在 `figures/results.md`。
+- \* 生成速度：本地 RTX 5060 Ti，batch=1，200 个新 token，没有 KV cache（见 `samples_A.md`）。小模型生成也只快不到 2 倍：每一步都要从 Python 发起一次完整前向，batch=1 时 GPU 大部分时间在等，速度主要受每步固定开销限制，而不是计算量。
+
+### 相同已训练 token 数下的比较
+
+训练时每 200 步才评估一次，3 亿 token 处最近的一次评估在 2.88 亿。所以这里用 `src/evaluate.py` 对训练中途保存的 `ckpt_tok*.pt` 重新评估：每个 checkpoint 都在**同一批** 0.82M 个验证 token 上计算 loss。
+
+| 已训练 token | s10m | s50m | s100m |
+|---|---|---|---|
+| 1 亿 | 3.592 | 3.357 | 3.357 |
+| 3 亿 | **3.082**（训练结束） | 2.843 | 2.810 |
+| 10 亿 | — | **2.529**（训练结束） | 2.467 |
+| 15 亿 | — | — | **2.394**（训练结束） |
+
+加粗的是各模型训练结束时的值（学习率已经衰减到最低）。其他格子是训练中途的值，那时学习率还很高，**loss 比"专门只训练到这么多 token"偏高**。也就是说，这张表的比较对大模型是不利的。分来源的数字见 `figures/ckpt_eval.md`。
+
+### 图
+
+| 加权 val loss（横轴 token，对数） | 训练时间 |
+|---|---|
+| ![](figures/val_overlay_tokens.png) | ![](figures/val_overlay_time.png) |
+| **SmolLM** val loss | **TinyStories** val loss |
+| ![](figures/val_smollm_overlay.png) | ![](figures/val_tinystories_overlay.png) |
+| **Scaling**：参数量 vs 最终 val loss | **train − val**（看过拟合） |
+| ![](figures/scaling.png) | ![](figures/train_val_gap.png) |
+
+### 生成样例
+
+固定 10 个 prompt（故事、说明文各 5 个），每个模型 `temperature=0.8, top_k=50, seed=42`，最多 200 个新 token。全部样例见 [samples_A.md](samples_A.md)。
+
+| prompt | s10m | s50m | s100m |
+|---|---|---|---|
+| Lily wanted to | play with her friends, but they had to be careful and not go near the pond. "Go away, hay!" it said. Lily was sad and said, "You are not careful, hay. Go away!" But she was too lazy to leave the pond… | play with the hoop too, but she couldn't find one. She asked her mom if they could make a swing hoop for her. Her mom said yes and they went to the store to make the hoop… | play with the ball, but Lily said, "No, it's mine. You have your own toys." Lily felt sad and went to sit on a bench. She saw Tim and wanted to play with him… |
+| The French Revolution began | in the aftermath of the Revolution, and the Roman Empire was the first settlement of the Roman Empire. In the 17th Century, the French Revolution brought new powers to the Roman Republic… | in the afternoon of 1864, and the French Revolution resulted in the establishment of its own government. Under Louis XIV's rule, France and Spain had to separate from the Catholic world… | in the aftermath of the Revolutionary War, and on 17 September 1789, the French Revolution was declared an international war of war… |
+
+自动指标（distinct-2 = 不同 bigram 数 / bigram 总数，越高越不重复）：
+
+| 模型 | 故事 distinct-2 | 说明文 distinct-2 |
+|---|---|---|
+| s10m | 0.890 | 0.642 |
+| s50m | 0.908 | 0.728 |
+| s100m | 0.900 | 0.783 |
+
+### 学习过程：s100m 的四个 checkpoint
+
+同一个 prompt、同一个 seed，全部样例见 [samples_progress.md](samples_progress.md)。
+
+| checkpoint | Once upon a time | Photosynthesis is the process |
+|---|---|---|
+| 1 亿 token | , there was a little boy named Timmy. Timmy loved to play with his toy car. He would drive the car around the park where it went… | of the process of the human brain, which we will be on a better equation for the development of the human brain… |
+| 3 亿 token | , there was a little boy named Timmy. Timmy loved to play with his toy cars and trucks. One day, Timmy's mommy gave him a new toy truck. The new one was red and shiny… | of the process of the biological process that is used in the human body. It is one of the main processes of physical body… |
+| 10 亿 token | …Timmy's mommy told him a new toy for his birthday. It was a big, red truck that could make sounds and move by itself… | of the process of photosynthesis, and the chemical reaction takes place in the food chain… plants convert carbon dioxide to oxygen… |
+| 15 亿（最终） | …One day, Timmy's mom told him it was time to take a bath. Timmy didn't want to stop playing, but he knew he had to listen to his mom… | of the photosynthesis that converts light energy (solar) into chemical energy (solar or solar), where it forms chemical bonds with carbon dioxide (CO2) and water vapor… |
+
+最早保存的 checkpoint 是 1 亿 token，那时故事已经通顺，看不到"乱码"阶段（"乱码 → 有词"发生在前几百步，val loss 从 9.2 降到 5 左右的时候）。说明文则是从"语法对但内容空洞、跑题"逐渐变成"开始提到光能、CO2 等相关概念"。
+
+### 人工盲评（待组员完成）
+
+- 打分表：[blind_eval_sheet.md](blind_eval_sheet.md)。30 条样本打乱顺序，看不到模型名，只有编号 S01–S30。
+- 答案：[blind_eval_key.json](blind_eval_key.json)，**三人都打完分再打开**。
+- 每条 4 项，每项 1–5 分：语法、连贯、事实（只评说明文）、重复。三人分别填，最后取平均填入下表。
+
+| 模型 | 故事：语法 | 故事：连贯 | 故事：重复 | 说明文：语法 | 说明文：连贯 | 说明文：事实 | 说明文：重复 |
+|---|---|---|---|---|---|---|---|
+| s10m | | | | | | | |
+| s50m | | | | | | | |
+| s100m | | | | | | | |
+
+### 结论
+
+1. **参数越多 val loss 越低，但收益递减。** 加权 val loss 从 s10m 到 s50m 下降 0.555（3.098 → 2.543），从 s50m 到 s100m 只下降 0.134（→ 2.409）。按训练计算量 C ≈ 6·N·D 算，三个模型分别约 2.5e16、3.3e17、9.5e17 FLOPs。每增加 10 倍计算量，loss 前一段下降约 0.50，后一段只下降约 0.29。三个点不在同一条直线上，往右越来越平，这和 scaling law 的幂律形状一致：loss 越接近数据本身的熵，就越难再往下降。
+2. **规模收益在难、易两个语料上不一样。** 从 s10m 到 s100m，SmolLM 的 loss 下降 0.76（3.63 → 2.87），TinyStories 下降 0.52（1.85 → 1.33）。绝对值上，规模对难的 SmolLM 帮助更大。TinyStories 的 loss 本来就低（词汇少、句式固定），s10m 已经能写出通顺的故事，样例里看不出三个模型的明显差别，故事的 distinct-2 也都在 0.89–0.91。说明文的差别更明显：distinct-2 从 0.64 升到 0.78，s10m 会反复说同样的词组（"Roman Empire … Roman Empire"）。
+3. **相同 token 数下，大模型学得更快。** 已训练 3 亿 token 时，s10m 的学习率已经衰减完，状态最有利，loss 是 3.082；而 s50m（2.843）和 s100m（2.810）的学习率还很高，loss 仍然低 0.24–0.27。这说明大模型每个 token 学到的更多，并不只是因为"看的数据多"。不过在 1 亿 token 时，s50m 和 s100m 完全一样（都是 3.357）：训练早期瓶颈在数据，规模的优势还没体现出来。
+4. **三个模型都没有过拟合。** train − val 的差值一直在 ±0.08 内波动（见 gap 图）。s100m 训练了 15 亿 token，相当于 0.92 轮，大部分数据只看过一次，所以 train loss 本身就近似于在没见过的数据上测出来的 loss。三条曲线的起伏几乎同步，因为三个模型用同一个随机种子，读到的 batch 顺序相同，某些 batch 恰好比较难。
+5. **成本。** s100m 的训练时间是 s10m 的 25 倍（115.9 vs 4.6 分钟），换来 val loss 下降 0.69、困惑度从 22.2 降到 11.1。s50m → s100m 多花 2.6 倍时间，只换来 0.13 的 loss 下降。如果只看 TinyStories 风格的故事，s10m 已经够用；要写说明文，还是大模型更好，但即使是 0.1B 也经常编造事实（例如"French Revolution … 1864"、"Louis XIV"）。
+
+---
+
+## 实验 B：采样参数
+
+### 设置
+
+- 模型：s100m（`ckpt_best.pt`）。
+- 设置：temperature ∈ {0.3, 0.7, 1.0, 1.5} × top-k ∈ {不限, 50}，外加 greedy（T=0）和 T=1.0 + top-p=0.9，共 10 组。
+- prompt：故事 2 个（Once upon a time / Lily wanted to），说明文 2 个（Photosynthesis is the process / The water cycle describes）。
+- seed 1、2、3，每条最多 200 个新 token。全部 120 条样例见 [samples_B.md](samples_B.md)。
+
+### 自动指标
+
+| 设置 | 平均 distinct-2 | 平均长度（token） |
+|---|---|---|
+| greedy | 0.529 | 162 |
+| T=0.3 | 0.510 | 180 |
+| T=0.3, k=50 | 0.510 | 180 |
+| T=0.7 | 0.757 | 174 |
+| T=0.7, k=50 | 0.705 | 177 |
+| T=1.0 | 0.961 | 174 |
+| T=1.0, k=50 | 0.940 | 183 |
+| T=1.0, p=0.9 | 0.944 | 173 |
+| T=1.5 | 1.000 | 201 |
+| T=1.5, k=50 | 0.984 | 179 |
+
+### 样例（Photosynthesis is the process，seed 1）
+
+| 设置 | 续写 |
+|---|---|
+| greedy | of converting organic matter into chemical energy. What is the difference between photosynthesis and photosynthesis? Photosynthesis is the process of converting organic matter into chemical energy. What is the difference between photosynthesis and photosynthesis? … |
+| T=0.3 | of converting organic compounds into chemical energy. - The process of photosynthesis involves the conversion of organic compounds into chemical energy. - The process of photosynthesis involves the conversion of organic compounds into chemical energy. … |
+| T=0.7 | of converting sunlight into energy using photosynthesis. The photosynthesis process is the process by which plants and animals convert sunlight into electricity. In this process, plants are converted by photosynthesis to produce energy. … |
+| T=1.0, k=50 | of converting sunlight into energy using photosynthesis. The photosynthesis process involves several stages that form the base of photosynthesis. Each stage involves different types of photosynthesis, such as: … |
+| T=1.5 | of making clean alpha sprints from the Cariboo chrysog stored on the crop drain flats. A producer literature highlight: all robust carbay citropmic maps and other bystanders have considerable sexual qualities … |
+| T=1.5, k=50 | of making living beings with enough living elements from the air that helps protect the plants and animals on the planet at that level. Aerobic Phase Air is a combination for stabilizing and cooling … |
+
+### 结论
+
+1. **低温度会重复，而且保守。** greedy 和 T=0.3 的 distinct-2 只有约 0.51–0.53，说明文里整句循环（"What is the difference between photosynthesis and photosynthesis?" 一遍遍出现）。原因是每一步都选概率最高的词，一旦生成了一个循环，循环里的每一步本身都是"最可能"的，模型就跳不出来。故事类在 greedy 下反而很通顺，因为 TinyStories 的句式本来就高度固定。
+2. **高温度会乱。** T=1.5 的 distinct-2 达到 1.000，完全没有重复，但文本已经是乱码，出现了"Cariboo chrysog""citropmic"这类不存在的词。除以 T>1 会把分布拉平，词表尾部大量本来几乎不可能的 token 一起分到了可观的概率。所以 **distinct-2 高不代表质量好**，只能和人工阅读结合起来看。
+3. **top-k 在高温度下能兜底。** 同样是 T=1.5，加上 top-k=50 后，只从概率最高的 50 个词里抽，拼写基本正常，句子大体合语法（虽然内容荒诞）。在 T=0.3 时，top-k 完全不起作用（两组输出逐字相同）：低温下前 50 名以外的词概率本来就接近 0。top-p=0.9 和 top-k=50 在 T=1.0 下效果接近。
+4. **推荐设置**：T=0.7–0.8 + top-k=50。这组既不容易陷入循环，也很少出现拼写错误，所以界面默认值用 T=0.8、top-k=50。
+
+---
+
+## 实验 C：字符级 vs BPE（进行中）
+
+### 设置
+
+| | s10m（BPE） | s10m_char（字符级） |
+|---|---|---|
+| 词表 | 8192（BPE） | 336（出现 ≥100 次的字符 + `<|endoftext|>` + `<unk>`） |
+| 结构 | 6 / 384 / 6 | 相同 |
+| 参数（非 emb / 总） | 10.65M / 13.99M | 10.65M / 10.97M |
+| 数据 | 全部分片，70:30 | 每个来源 1 个分片（3 亿 token 已足够），显式指定 70:30 |
+| 训练 token | 3 亿 | 3 亿（≈ 3 亿字符，约为 BPE 版文本量的 1/4） |
+| 上下文 512 | ≈ 2000 个字符 | 512 个字符 |
+| 其余 | 相同（lr 1e-3、2290 步、有效 batch 131072、seed 1337） | 相同 |
+| 训练环境 | 云端 RTX 5090 | 本地 RTX 5060 Ti（64 × 4） |
+
+数据：`python src/prepare.py --tokenizer char --shards 1 --out_dir data/processed_char`（已完成）。配置：`configs/s10m_char.yaml`。冒烟测试（50 步）通过：初始 loss 5.81 ≈ ln(336)；本地吞吐 340k tok/s，显存 3.2GB；完整训练约 15 分钟。
+
+**为什么不能直接比 loss**：字符级每个 token 是 1 个字符，BPE 每个 token 平均约 3.9 个字符，"每个 token 的 loss"衡量的东西不一样。所以换算成 **bits-per-byte**：`bpb = 总 NLL / ln2 / UTF-8 字节数`。`src/evaluate.py bpb` 把同一段验证原文（从 BPE 的 val.bin 解码回文本）分别用两种分词器编码后计算，两个模型评估的是完全相同的文本。
+
+### 结果
+
+（正式训练后运行 `python src/evaluate.py bpb --runs runs/s10m runs/s10m_char runs/s50m runs/s100m`，结果填在这里，原表在 `figures/bpb.md`。）
+
+---
+
+## 复现命令
+
+```bash
+python src/plot_compare.py --runs runs/s10m runs/s50m runs/s100m --out docs/figures/
+python src/evaluate.py loss --ckpts runs/s10m/ckpt_tok100M.pt runs/s50m/ckpt_tok100M.pt runs/s100m/ckpt_tok100M.pt \
+    runs/s10m/ckpt_best.pt runs/s50m/ckpt_tok300M.pt runs/s100m/ckpt_tok300M.pt \
+    runs/s50m/ckpt_best.pt runs/s100m/ckpt_tok1000M.pt runs/s100m/ckpt_best.pt --out docs/figures/ckpt_eval.md
+python src/eval_prompts.py --runs runs/s10m runs/s50m runs/s100m --grid scale --out docs/samples_A.jsonl
+python src/eval_prompts.py --runs runs/s100m --grid progress --out docs/samples_progress.jsonl
+python src/eval_prompts.py --runs runs/s100m --grid sampling --out docs/samples_B.jsonl
+# 实验 C
+python src/prepare.py --tokenizer char --shards 1 --out_dir data/processed_char
+python src/train.py --config configs/s10m_char.yaml
+python src/evaluate.py bpb --runs runs/s10m runs/s10m_char runs/s50m runs/s100m
+```
