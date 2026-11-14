@@ -79,3 +79,12 @@ python app/app.py      # 浏览器打开 http://127.0.0.1:7860
 - 现场演示：调高/调低 temperature 会怎样？为什么？
 - 三个模型的输出差异在哪？与 loss 的差距是否一致？
 - 生成一段文本时，模型内部前向了多少次？
+
+## 实现记录（2026-11-15）
+
+- 实现：`app/app.py`，三个标签页（单模型生成 / 三模型对比 / 训练过程）按上面的布局完成。生成全部复用 `src/sample.py` 的 `load_model`、`generate_text`；示例 prompt 复用 `src/eval_prompts.py` 的 `PROMPTS`。
+- `model_info` 需要训练步数和 best val，这两个值用 `torch.load(..., mmap=True)` 读取，不会把含优化器状态的整个 checkpoint 读进内存。
+- `src/sample.py:load_model` 改成先加载到 CPU，再只把模型权重搬上 GPU。原来直接 `map_location="cuda"` 时，AdamW 的 m、v 也会占用显存（s100m 的 checkpoint 有 1.27GB）。
+- seed=-1 时随机生成一个 seed，并显示在输出下方，方便复现那次结果。
+- 流式输出（可选项）这次没做。
+- 自动验收（用 `gradio_client` 调接口，本地 RTX 5060 Ti）：同参数同 seed 结果一致 ✅；seed=-1 每次不同 ✅；T=0 时换 seed 结果也不变 ✅；三模型对比 200 token 共 3.1 秒（包含首次加载 s10m、s50m 的时间）✅；切换 checkpoint 时模型信息随之更新 ✅。
