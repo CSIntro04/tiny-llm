@@ -17,3 +17,6 @@ __pycache__/
 .gradio/
 .env
 .vscode/
+
+# 打包的训练结果
+*.tar.gz
