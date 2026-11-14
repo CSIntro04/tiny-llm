@@ -68,7 +68,7 @@ graph LR
 
 合计约 28 小时 GPU 时间，s50m、s100m 需要靠断点续训分几个晚上跑完。每次正式训练前都先报告配置、预计时长和显存，征得同意再跑。
 
-**数据与磁盘**：下载约 3.7GB（SmolLM 2.67GB + TinyStories 约 1GB），编码后 bin 约 3–3.5GB，磁盘至少留 12GB。数据集作者统计的"10 亿 token"用的是别的分词器，我们的 8k BPE 下实际 token 数以 `prepare.py` 的统计为准；如果全量明显超过 15 亿，s100m 不到一轮，结论不受影响。
+**数据与磁盘**：下载约 3.5GB（SmolLM 2.67GB + TinyStories 约 1GB），编码后 bin 共 3.3GB。**实测（阶段 2，8k BPE）**：训练集共 **16.3 亿 token**（SmolLM 11.46 亿 + TinyStories 4.85 亿，自然混合比例约 70:30），验证集 SmolLM 566 万、TinyStories 487 万 token。s100m 的 15 亿 token 预算约为 0.92 轮，s10m/s50m 分别约 18%/61%。详见 [data.md](data.md)。
 
 ## 交付物对照表
 

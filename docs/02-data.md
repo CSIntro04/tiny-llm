@@ -79,8 +79,9 @@ SOURCES = {"smollm": ..., "tinystories": ...}      # repo id、文件名列表�
 def download(source: str, shards: str, out_dir: str) -> list[str]: ...
 def iter_docs(paths: list[str]) -> Iterator[str]: ...
 def clean(doc: str, source: str) -> str | None: ...                 # 返回 None 表示丢弃
-def split_val(docs: Iterable[str], val_frac: float, seed: int) -> tuple[Iterator[str], Iterator[str]]: ...
-def sample_for_tokenizer(sources: list[str], n_chars: int) -> Iterator[str]: ...  # 按混合比例抽样
+def is_val(doc: str, val_frac: float, seed: int) -> bool: ...                  # 按 (seed, 文档内容) 哈希决定去向
+def split_docs(source, files, val_frac, seed) -> dict[str, Iterator[str]]: ...  # {"train": ..., "val": ...}
+def sample_for_tokenizer(train_files, n_chars, val_frac, seed) -> Iterator[str]: ...  # 按混合比例抽样
 def encode_to_bin(docs: Iterable[str], tok: Tokenizer, out_path: str) -> int: ...  # 返回 token 数
 def main() -> None: ...
 # --datasets smollm,tinystories --tokenizer bpe|char --vocab_size 8192 --shards 1|all --val_frac 0.005
@@ -88,8 +89,8 @@ def main() -> None: ...
 
 ```python
 # src/utils.py（数据加载部分）
-def get_batch(sources: dict[str, np.memmap], weights: dict[str, float], batch_size: int,
-              block_size: int, device: str) -> tuple[torch.Tensor, torch.Tensor]:
+def get_batch(sources: dict[str, str], weights: dict[str, float], batch_size: int,
+              block_size: int, device: str, rng: np.random.Generator | None = None) -> tuple[torch.Tensor, torch.Tensor]:
     """每个样本先按 weights 选来源，再在该来源里随机取 block_size+1 个连续 token。返回 x, y，形状 (B, T)。"""
 ```
 
@@ -112,7 +113,7 @@ def get_batch(sources: dict[str, np.memmap], weights: dict[str, float], batch_si
 
 - TinyStories：用官方 validation 分片。
 - SmolLM：无官方验证集，按文档以固定种子随机切出 **0.5%**（约 5000 篇、约 500–700 万 token）作为 `smollm_val.bin`。**按文档切，不按 token 切**，避免同一篇文档的前后半段分别落进训练集和验证集。
-- 数据集作者已做过全局打乱，但仍用自己的种子抽，保证可复现。
+- 实现上用 `blake2b(seed + 文档内容)` 的哈希决定去向（`is_val`），结果与读取顺序和分片数无关：M1 和全量运行时同一篇文档去向一致，重复文档也一定落在同一边。
 
 ### BPE 词元化
 
@@ -162,9 +163,9 @@ t = torch.from_numpy(data[i : i + block_size + 1].astype(np.int64))
 
 | 模型 | 预算 | 约占全量 | 说明 |
 |---|---|---|---|
-| s10m | 3 亿 | ~20% | 随机采样，大部分数据只会看到一次或看不到 |
-| s50m | 10 亿 | ~65% | |
-| s100m | 15 亿 | ~1 轮 | 我们的分词器下实际 token 数可能多于 15 亿，以 `meta.json` 为准 |
+| s10m | 3 亿 | ~18% | 随机采样，大部分数据只会看到一次或看不到 |
+| s50m | 10 亿 | ~61% | |
+| s100m | 15 亿 | ~0.92 轮 | 实测全量训练集 16.3 亿 token（见 `data.md`） |
 
 ## 验收标准
 
