@@ -13,7 +13,8 @@
 
 ## 硬件与环境
 
-- CPU：AMD Ryzen 5 9600X；GPU：**RTX 5060 Ti，8GB 显存**（Blackwell 架构，sm_120）。
+- 本地开发：CPU AMD Ryzen 5 9600X；GPU **RTX 5060 Ti，8GB 显存**（Blackwell 架构，sm_120）。
+- 正式训练：云端 **RTX 5090，32GB 显存**（同为 sm_120，环境同 `environment.yml`）。`configs/` 里的 batch 按 5090 设置，本地 8GB 运行时按各配置注释里的值，用 `--batch_size` / `--grad_accum` 覆盖（乘积保持 256）。
 - PyTorch 必须是 **2.7 及以上、CUDA 12.8 及以上**的版本，老版本不支持 50 系显卡。遇到 `no kernel image` 之类的报错，先查版本。
 - 训练用 **bf16 混合精度**（`torch.autocast(dtype=torch.bfloat16)`），不需要 GradScaler。
 - 注意力用 `F.scaled_dot_product_attention`，可以自动走 FlashAttention 来省显存。
@@ -33,7 +34,7 @@
 | s50m | 0.05B | 10 / 640 / 10 | 49.24M | 54.81M | 10 亿 |
 | s100m | 0.1B | 14 / 768 / 12 | 99.23M | 105.92M | 15 亿 |
 
-- token 预算按规模分配（约 14–21 token/参数，接近 Chinchilla 比例）。三个正式训练合计约 28 小时 GPU 时间，每个开跑前都要先确认。
+- token 预算按规模分配（约 14–21 token/参数，接近 Chinchilla 比例）。三个正式训练已于 2026-11-15 在云端 5090 上完成（合计约 2.8 小时，结果在 `runs/s10m|s50m|s100m`）；之后再开新的长时间训练仍要先确认。
 
 - 上下文长度默认 512。8GB 显存吃紧时，优先减小 batch 并用梯度累积补回来，其次开梯度检查点。
 - **不要超过 0.1B（约 1.1 亿参数）**，除非用户明确要求。

@@ -2,7 +2,7 @@
 
 ## 项目目标
 
-在 RTX 5060 Ti（8GB）上，用 **SmolLM-Corpus 1B 子集（约 10 亿 token）+ TinyStories（约 5 亿 token）** 的混合英文语料，从零训练三个规模的 Decoder-only Transformer：
+在本地 RTX 5060 Ti（8GB）上开发调试、云端 RTX 5090（32GB）上完成正式训练，用 **SmolLM-Corpus 1B 子集（约 10 亿 token）+ TinyStories（约 5 亿 token）** 的混合英文语料，从零训练三个规模的 Decoder-only Transformer：
 
 - **s10m**（0.01B，训练 3 亿 token）、**s50m**（0.05B，10 亿）、**s100m**（0.1B，15 亿）
 
@@ -26,7 +26,7 @@ graph LR
 | 3 模型 | `src/model.py`、`tests/test_model.py` | 1–1.5 天 |
 | 4 训练 | `src/train.py`、`src/utils.py`、`configs/*.yaml` | 1.5 天 |
 | 5 采样 | `src/sample.py` | 0.5 天 |
-| 6 实验 | 3 个正式 run、`src/plot_compare.py`、`docs/experiments.md` | 训练约 13 小时 GPU 时间（实测，可分多晚）+ 1 天分析 |
+| 6 实验 | 3 个正式 run、`src/plot_compare.py`、`docs/experiments.md` | 训练实际约 2.8 小时（云端 RTX 5090）+ 1 天分析 |
 | 7 界面 | `app/app.py` | 1 天 |
 | 8 报告 | `README.md`、`docs/model.md`、答辩材料 | 1 天 |
 
@@ -35,8 +35,8 @@ graph LR
 | 里程碑 | 内容 | 完成标志 |
 |---|---|---|
 | **M1 流程跑通** | 两个数据集各 1 个分片（~0.57GB）+ debug 模型，阶段 1–5 的最小版本 | `sample.py` 能输出像样的英文片段；过拟合测试通过 |
-| **M2 第一个正式模型** | 全量数据（~3.7GB）+ s10m 完整训练（~20min）+ 界面雏形 | `runs/s10m/` 有 loss 曲线，界面能生成 |
-| **M3 三模型对比** | s50m（~3.6h）、s100m（~9h）训练完成，实验 A、B 完成 | `docs/experiments.md` 有叠图、样例表、结论 |
+| **M2 第一个正式模型** | 全量数据（~3.7GB）+ s10m 完整训练（5090 上 4.6 分钟）+ 界面雏形 | `runs/s10m/` 有 loss 曲线，界面能生成 |
+| **M3 三模型对比** | s50m（45 分钟）、s100m（1 小时 56 分）训练完成 ✅，实验 A、B 完成 | `docs/experiments.md` 有叠图、样例表、结论 |
 | **M4 交付** | README、结构图、答辩问题清单 | 新机器按 README 能复现 |
 
 ## 模型规模
@@ -60,13 +60,13 @@ graph LR
 
 **吞吐**：每个 token 的训练计算量 ≈ `6N + 12·L·T·C` FLOPs（N 为参数量）。按有效算力约 15 TFLOPS：
 
-| 模型 | FLOPs/token | 初估 tok/s | **实测 tok/s**（阶段 4 冒烟） | 显存峰值 | 训练 token | **预计用时** |
-|---|---|---|---|---|---|---|
-| s10m | ~98M | ~100k | **~280k**（64×4） | 4.7GB | 3 亿 | **~18 分钟** |
-| s50m | ~368M | ~41k | **~78k**（32×8） | 5.7GB | 10 亿 | **~3.6 小时** |
-| s100m | ~701M | ~21k | **~47k**（16×16） | 5.6GB | 15 亿 | **~8.9 小时** |
+| 模型 | FLOPs/token | 初估 tok/s（5060 Ti） | 冒烟实测（5060 Ti） | **正式训练实测（5090）** | 显存峰值（5090） | 训练 token | **实际用时（5090）** |
+|---|---|---|---|---|---|---|---|
+| s10m | ~98M | ~100k | 280k（64×4） | **1113k**（128×2） | 9.2GB | 3 亿 | **4.6 分钟** |
+| s50m | ~368M | ~41k | 78k（32×8） | **370k**（64×4） | 10.4GB | 10 亿 | **45 分钟** |
+| s100m | ~701M | ~21k | 47k（16×16） | **216k**（64×4） | 16.5GB | 15 亿 | **1 小时 56 分** |
 
-实测比初估快一倍多（bf16 + SDPA + torch.compile，有效算力约 33 TFLOPS），合计约 **13 小时** GPU 时间（评估开销约 1–2%）。s100m 可用 `--stop_iter` 分两晚跑完。显存峰值是 `torch.cuda.max_memory_allocated()`，Windows 桌面另占约 2.7GB。每次正式训练前都先报告配置、预计时长和显存，征得同意再跑。
+本地 5060 Ti 冒烟实测合计约 13 小时（有效算力约 33 TFLOPS）；正式训练改在云端 RTX 5090 上进行，有效算力约 150 TFLOPS，**三个模型合计约 2.8 小时**（只算训练步，不含评估和编译）。有效 batch 不变（256 × 512 token），只按显存调整 micro-batch × accum。显存峰值是 `torch.cuda.max_memory_allocated()`。训练结果见 [04-training.md](04-training.md) 的"正式训练结果"。
 
 **数据与磁盘**：下载约 3.5GB（SmolLM 2.67GB + TinyStories 约 1GB），编码后 bin 共 3.3GB。**实测（阶段 2，8k BPE）**：训练集共 **16.3 亿 token**（SmolLM 11.46 亿 + TinyStories 4.85 亿，自然混合比例约 70:30），验证集 SmolLM 566 万、TinyStories 487 万 token。s100m 的 15 亿 token 预算约为 0.92 轮，s10m/s50m 分别约 18%/61%。详见 [data.md](data.md)。
 

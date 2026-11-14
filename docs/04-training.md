@@ -50,8 +50,8 @@ data:
   sources: [smollm, tinystories]
   mix: natural            # 按各来源训练 token 数的比例混合；也可写成 {smollm: 0.67, tinystories: 0.33}
 train:
-  batch_size: 64          # micro-batch
-  grad_accum: 4           # 有效 batch = 64 × 4 × 512 = 131072 token/步
+  batch_size: 128         # micro-batch（云端 RTX 5090；本地 8GB 用 64 × 4）
+  grad_accum: 2           # 有效 batch = 128 × 2 × 512 = 131072 token/步
   max_iters: 2290         # 2290 × 131072 ≈ 3.0 亿 token
   lr: 1.0e-3
   min_lr: 1.0e-4          # = lr / 10
@@ -68,16 +68,16 @@ dtype: bfloat16
 compile: true             # WSL2/Linux 可开；原生 Windows 设 false
 ```
 
-| 配置 | micro-batch × accum | lr | `max_iters` | 训练 token | 预计用时 |
-|---|---|---|---|---|---|
-| debug | 32 × 1 | 1e-3 | 1200 | ~2000 万 | 实测 0.6 分钟 |
-| s10m | 64 × 4 | 1e-3 | 2290 | 3.0 亿 | ~18min（实测 280k tok/s） |
-| s50m | 32 × 8 | 6e-4 | 7630 | 10.0 亿 | ~3.6h（实测 78k tok/s） |
-| s100m | 16 × 16 | 4e-4 | 11450 | 15.0 亿 | ~8.9h（实测 47k tok/s） |
+| 配置 | micro-batch × accum（云端 5090） | 本地 8GB 显卡 | lr | `max_iters` | 训练 token | 实际用时（5090） |
+|---|---|---|---|---|---|---|
+| debug | 32 × 1 | 32 × 1 | 1e-3 | 1200 | ~2000 万 | 0.6 分钟（本地 5060 Ti） |
+| s10m | 128 × 2 | 64 × 4 | 1e-3 | 2290 | 3.0 亿 | **4.6 分钟** |
+| s50m | 64 × 4 | 32 × 8 | 6e-4 | 7630 | 10.0 亿 | **45 分钟** |
+| s100m | 64 × 4 | 16 × 16 | 4e-4 | 11450 | 15.0 亿 | **1 小时 56 分** |
 
 - 模型越大学习率越小：参数越多，同样的步长造成的输出变化越大，容易不稳定。
 - 每个模型的 cosine 调度按自己的 `max_iters` 走完，所以 s50m、s100m 在 3 亿 token 时学习率还很高——这是"相同 token 数对比"时要说明的混杂因素。
-- 有效 batch 统一约 13 万 token；如果 s100m 训练不稳，可以把有效 batch 加倍、`max_iters` 减半，三个模型一起改。
+- 有效 batch 统一 131072 token/步（= 256 × 512）。换显卡时只调 micro-batch 和 `grad_accum`，保持两者乘积 256 不变；三个模型的对比因此不受硬件影响。
 
 ## 实现要点
 
@@ -135,7 +135,7 @@ runs/<name>/
 
 - 显存 ≈ 16 字节/参数（fp32 参数 + 梯度 + AdamW 的 m、v）+ 激活。激活随 `B × T × C × L` 增长，SDPA 避免了 `T×T` 的注意力矩阵。
 - 每 token 计算量 ≈ `6N + 12·L·T·C` FLOPs。用冒烟测试的实测 tok/s 估算：总时长 = `max_iters × 有效 batch token 数 / tok/s`。
-- 初估：debug 几分钟；s10m ≈ 1h；s50m ≈ 7h；s100m ≈ 20h（合计约 28h）。**阶段 4 实测**：s10m ≈ 18min、s50m ≈ 3.6h、s100m ≈ 8.9h（合计约 13h），见下方"实测结果"。**每个正式训练开跑前先报告配置、预计时长、显存并确认。**
+- 初估（5060 Ti）：s10m ≈ 1h；s50m ≈ 7h；s100m ≈ 20h。本地冒烟实测：18min / 3.6h / 8.9h（合计约 13h）。**正式训练改在云端 RTX 5090 上进行，实际合计不到 3 小时**，见下方"正式训练结果"。**每个正式训练开跑前先报告配置、预计时长、显存并确认。**
 - 长时间训练用 `tmux` 或 `nohup python src/train.py ... > runs/<name>.out 2>&1 &` 后台跑。
 
 ### OOM 预案（按顺序）
@@ -186,6 +186,39 @@ python src/train.py --config configs/debug.yaml
 | debug 完整训练 | `runs/debug`（1200 步，1966 万 token，0.6 分钟） | val 9.06 → **4.40**；SmolLM 4.99，TinyStories **2.99**（明显更低，符合预期） |
 
 `--stop_iter N`：跑到第 N 步存档退出，cosine 调度仍按 `max_iters` 计算，下次 `--resume` 无缝接上。适合把 s100m（~9h）拆成两晚。
+
+## 正式训练结果（云端 RTX 5090，2026-11-15）
+
+本地 5060 Ti（8GB）只用来开发和做冒烟测试，三个正式训练在云端 **RTX 5090（32GB，同为 Blackwell sm_120）** 上完成。软件环境按 `environment.yml` 创建，代码与配置和本地完全相同。显存更大，所以把 micro-batch 调大、`grad_accum` 相应调小，**有效 batch 保持 131072 token/步不变**。三次训练都一次跑完，中间没有续训。
+
+| 模型 | 参数（非 emb / 总） | batch × accum | 步数 | 训练 token | 训练用时 | 平均吞吐 | 显存峰值 |
+|---|---|---|---|---|---|---|---|
+| s10m | 10.65M / 13.99M | 128 × 2 | 2290 | 3.0 亿 | 4.6 分钟 | 1113k tok/s | 9.2 GB |
+| s50m | 49.24M / 54.81M | 64 × 4 | 7630 | 10.0 亿 | 45.2 分钟 | 370k tok/s | 10.4 GB |
+| s100m | 99.23M / 105.92M | 64 × 4 | 11450 | 15.0 亿 | 115.9 分钟 | 216k tok/s | 16.5 GB |
+
+- 训练用时是 `log.csv` 的 `elapsed_s`，只算训练步，不含评估和 `torch.compile` 编译，实际墙钟时间稍长一些。
+- 显存峰值来自 `torch.cuda.max_memory_allocated()`。
+- s100m 的吞吐约 216k tok/s，相当于约 150 TFLOPS 的有效算力（按 `6N + 12·L·T·C` 估算）；同样的模型在本地 5060 Ti 上是 47k tok/s。
+
+**最终 loss**（最后一步评估，`ckpt_last.pt`；val 全程单调下降，所以 `ckpt_best.pt` 也是这一步）
+
+| 模型 | train | val（按 mix 加权） | val SmolLM | val TinyStories | token/参数 |
+|---|---|---|---|---|---|
+| s10m | 3.096 | **3.098** | 3.629 | 1.845 | ~21 |
+| s50m | 2.535 | **2.544** | 3.016 | 1.426 | ~18 |
+| s100m | 2.389 | **2.409** | 2.865 | 1.330 | ~14 |
+
+**观察**（详细分析放在阶段 6）
+
+- **规模越大 loss 越低，但边际收益递减**：s10m→s50m 降了 0.55，s50m→s100m 只降了 0.14。
+- **两个语料差距很大**：TinyStories 的词汇和句式简单、可预测性强，loss 比 SmolLM 低 1.5 左右。
+- **几乎没有过拟合**：train 和 val 基本重合。s100m 也只把训练数据过了约 0.92 遍，其余两个更少。
+- **训练稳定**：warmup 之后梯度范数最大约 1.08（s100m），没有出现 loss 尖峰或 NaN。
+- **已经进入收益递减阶段**：最后 20% 的 token 只让 val 再降了 0.025–0.031（约 1%），说明按这个 token 预算已经训练充分。
+- **相同 token 数下大模型更好**：在约 3 亿 token 处，s10m 的 val 是 3.098，s50m 约 2.86，s100m 约 2.82（取 step 2200 和 2400 两次评估之间的值）。但 s10m 那时学习率已经退火到最低，另外两个还没有，所以严格比较要在阶段 6 用 `ckpt_tok300M.pt` 来做。
+
+结果文件：`runs/{s10m,s50m,s100m}/` 下的 `config.yaml`、`log.csv`、`loss_curve.png`，以及 `runs/*.out`。checkpoint 不进 git。
 
 ## 答辩可能被问的问题
 

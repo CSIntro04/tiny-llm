@@ -7,8 +7,8 @@ data:
   sources: [smollm, tinystories]
   mix: natural            # 按各来源训练 token 数的比例混合（meta.json 的 mix_weights）
 train:
-  batch_size: 32          # micro-batch
-  grad_accum: 8          # 有效 batch = batch_size × grad_accum × 512 token/步
+  batch_size: 64         # micro-batch（云端 RTX 5090 正式训练所用；本地 8GB 显卡用 --batch_size 32 --grad_accum 8）
+  grad_accum: 4           # 有效 batch = batch_size × grad_accum × 512 = 131072 token/步（三个正式配置相同）
   max_iters: 7630
   stop_iter: null         # 跑到这一步就存档退出（不影响 cosine 调度），用于分几晚训练
   lr: 6.0e-4
