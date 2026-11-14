@@ -4,6 +4,8 @@ data/processed/*.bin
 
 # checkpoint
 runs/*/ckpt*.pt
+runs/smoke_*/
+runs/overfit_*/
 
 # Python
 __pycache__/

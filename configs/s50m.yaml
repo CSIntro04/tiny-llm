@@ -1,0 +1,26 @@
+# 实验 s50m。四个配置除 preset、micro-batch × grad_accum、lr/min_lr、max_iters 外完全相同。
+name: s50m
+out_dir: runs
+model: { preset: s50m, vocab_size: 8192, block_size: 512, dropout: 0.0, bias: true, grad_ckpt: false }
+data:
+  dir: data/processed
+  sources: [smollm, tinystories]
+  mix: natural            # 按各来源训练 token 数的比例混合（meta.json 的 mix_weights）
+train:
+  batch_size: 32          # micro-batch
+  grad_accum: 8          # 有效 batch = batch_size × grad_accum × 512 token/步
+  max_iters: 7630
+  stop_iter: null         # 跑到这一步就存档退出（不影响 cosine 调度），用于分几晚训练
+  lr: 6.0e-4
+  min_lr: 6.0e-5              # = lr / 10
+  warmup_iters: 200
+  weight_decay: 0.1
+  betas: [0.9, 0.95]
+  grad_clip: 1.0
+  eval_interval: 200
+  eval_iters: 50          # 每个来源各 50 个 batch
+  ckpt_tokens: [1.0e+8, 3.0e+8, 1.0e+9]   # 到达这些已训练 token 数时额外保存 ckpt_tok{N}.pt
+  log_interval: 10
+seed: 1337
+dtype: bfloat16
+compile: true             # WSL2/Linux 可开；原生 Windows 设 false

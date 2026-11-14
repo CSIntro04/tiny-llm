@@ -70,10 +70,10 @@ compile: true             # WSL2/Linux 可开；原生 Windows 设 false
 
 | 配置 | micro-batch × accum | lr | `max_iters` | 训练 token | 预计用时 |
 |---|---|---|---|---|---|
-| debug | 32 × 1 | 1e-3 | 1200 | ~2000 万 | 几分钟（M1 用 1 个分片） |
-| s10m | 64 × 4 | 1e-3 | 2290 | 3.0 亿 | ~1h |
-| s50m | 32 × 8 | 6e-4 | 7630 | 10.0 亿 | ~7h |
-| s100m | 16 × 16 | 4e-4 | 11450 | 15.0 亿 | ~20h |
+| debug | 32 × 1 | 1e-3 | 1200 | ~2000 万 | 实测 0.6 分钟 |
+| s10m | 64 × 4 | 1e-3 | 2290 | 3.0 亿 | ~18min（实测 280k tok/s） |
+| s50m | 32 × 8 | 6e-4 | 7630 | 10.0 亿 | ~3.6h（实测 78k tok/s） |
+| s100m | 16 × 16 | 4e-4 | 11450 | 15.0 亿 | ~8.9h（实测 47k tok/s） |
 
 - 模型越大学习率越小：参数越多，同样的步长造成的输出变化越大，容易不稳定。
 - 每个模型的 cosine 调度按自己的 `max_iters` 走完，所以 s50m、s100m 在 3 亿 token 时学习率还很高——这是"相同 token 数对比"时要说明的混杂因素。
@@ -135,7 +135,7 @@ runs/<name>/
 
 - 显存 ≈ 16 字节/参数（fp32 参数 + 梯度 + AdamW 的 m、v）+ 激活。激活随 `B × T × C × L` 增长，SDPA 避免了 `T×T` 的注意力矩阵。
 - 每 token 计算量 ≈ `6N + 12·L·T·C` FLOPs。用冒烟测试的实测 tok/s 估算：总时长 = `max_iters × 有效 batch token 数 / tok/s`。
-- 初估：debug 几分钟；s10m ≈ 1h；s50m ≈ 7h；s100m ≈ 20h（合计约 28h）。**每个正式训练开跑前先报告配置、预计时长、显存并确认。**
+- 初估：debug 几分钟；s10m ≈ 1h；s50m ≈ 7h；s100m ≈ 20h（合计约 28h）。**阶段 4 实测**：s10m ≈ 18min、s50m ≈ 3.6h、s100m ≈ 8.9h（合计约 13h），见下方"实测结果"。**每个正式训练开跑前先报告配置、预计时长、显存并确认。**
 - 长时间训练用 `tmux` 或 `nohup python src/train.py ... > runs/<name>.out 2>&1 &` 后台跑。
 
 ### OOM 预案（按顺序）
@@ -170,6 +170,22 @@ python src/train.py --config configs/debug.yaml
 - 学习率按 step 计算而不是按 epoch；续训时 `it` 要正确恢复。
 - 20 小时的训练中途可能遇到 Windows 更新重启、WSL 被关闭：`ckpt_last.pt` 每次 eval（约 200 步）都保存，最多损失几十分钟；写 checkpoint 时先写临时文件再 `os.replace`，防止写到一半断电导致文件损坏。
 - 长训练期间每个来源的 val loss 都要看：如果只有 SmolLM 在降而 TinyStories 不动（或反过来），检查混合权重。
+- **必须在激活的 conda 环境里运行**（`conda activate tiny-llm` 或 `conda run -n tiny-llm python ...`）。直接调用 `envs/tiny-llm/bin/python` 时 `PATH` 里没有环境的 `bin/`，`torch.compile` 会报 `Cannot find ptxas-blackwell`（Triton 找不到 conda 装的 `ptxas`）。
+- **PyYAML 按 YAML 1.1 解析**：`1.0e8`、`3e-4` 这类写法会被读成**字符串**，浮点数的科学计数法要写成 `1.0e+8`、`3.0e-4`（带小数点和指数符号）。配置里已按此写法；命令行覆盖时 `load_config` 会再尝试转成 float。
+
+## 实测结果（2026-11-14，阶段 4 验收）
+
+| 检查 | 命令 / 名称 | 结果 |
+|---|---|---|
+| 单元测试 | `pytest tests/ -v` | 24 项全过（含 `test_train.py`：学习率、配置覆盖、同名拒绝、续训与不中断逐位一致） |
+| 过拟合 | `--overfit --name overfit_debug --max_iters 300` | 固定一个 batch，loss 9.06 → 0.0003 |
+| 冒烟 | `smoke_debug`（50 步） | 初始 val 9.06 ≈ ln 8192 = 9.01；50 步后 7.44 |
+| 同名拒绝 | 再跑 `smoke_debug` | `FileExistsError`，未覆盖 |
+| 断点续训 | `smoke_resume`：`--max_iters 60 --stop_iter 30`，再 `--resume` | 从 step 30 接上；step 40 loss 7.8305 与不中断运行完全相同 |
+| 吞吐/显存 | `smoke_s10m` / `smoke_s50m` / `smoke_s100m` | 280k / 78k / 47k tok/s；峰值 4.7 / 5.7 / 5.6 GB（均 < 7.5GB） |
+| debug 完整训练 | `runs/debug`（1200 步，1966 万 token，0.6 分钟） | val 9.06 → **4.40**；SmolLM 4.99，TinyStories **2.99**（明显更低，符合预期） |
+
+`--stop_iter N`：跑到第 N 步存档退出，cosine 调度仍按 `max_iters` 计算，下次 `--resume` 无缝接上。适合把 s100m（~9h）拆成两晚。
 
 ## 答辩可能被问的问题
 
