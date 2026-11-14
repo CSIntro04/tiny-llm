@@ -1,0 +1,25 @@
+# conda 环境定义（主）。创建：conda env create -f environment.yml
+# 只用 conda-forge 频道（镜像在 ~/.condarc 里配置为清华 TUNA）。
+# 版本是 2026-11-14 实际装上并通过 src/check_env.py 的版本。
+name: tiny-llm
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12.16
+  - pytorch=2.14.1=cuda129*  # =cuda* 约束构建字符串，强制装 GPU 版而不是 CPU 版
+  - cuda-version=12.9        # 50 系显卡（sm_120）需要 CUDA 12.8+
+  # torch.compile 依赖：Triton 编译 GPU kernel 时要现场编译一个 C 启动器，
+  # 需要 C 编译器和 cuda.h（WSL 系统里两样都没有，所以从 conda-forge 装）
+  - gcc=14.4.0
+  - cuda-cudart-dev=12.9.79
+  - numpy=2.5.4
+  - tokenizers=0.23.3        # 训练 BPE
+  - pyarrow=26.0.0           # 读 parquet
+  - datasets=5.2.0           # 可选；下载用 huggingface_hub（datasets 的依赖）
+  - huggingface_hub=1.32.0
+  - pyyaml=6.0.3
+  - matplotlib=3.11.2
+  - gradio=6.32.0
+  - tqdm=4.70.1
+  - pytest=9.2.0
+  - jupyterlab=4.6.6

@@ -1,0 +1,16 @@
+# 数据（大文件不进 git）
+data/raw/
+data/processed/*.bin
+
+# checkpoint
+runs/*/ckpt*.pt
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+
+# 工具
+.ipynb_checkpoints/
+.gradio/
+.env
