@@ -91,7 +91,7 @@ python src/train.py --config configs/s100m.yaml --resume                       #
 
 checkpoint 不进 git。我们把三个正式模型导出成**仅权重**版本（去掉 AdamW 状态，只能生成、不能续训），共 701MB：
 
-- 网盘：**（链接待填）** → 下载 `tiny-llm-weights.tar`
+- 交大云盘：<https://pan.sjtu.edu.cn/web/share/06331c94b063e87b7ef93d24f815a991> → 下载 `tiny-llm-weights.tar`
 - 在项目根目录解压：`tar xf tiny-llm-weights.tar -C runs/`，得到 `runs/{s10m,s50m,s100m}/ckpt_best.pt`
 
 自己训练完也可以这样导出：`python src/export.py --runs runs/s10m runs/s50m runs/s100m --out release/`。
