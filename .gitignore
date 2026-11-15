@@ -27,8 +27,8 @@ __pycache__/
 release/
 
 # 答辩 PPT 由 docs/slides/build_slides.py 生成，不进 git（模板 docs/slides/模板.pptx 进 git）
-docs/slides/*.pptx
-!docs/slides/模板.pptx
+docs/defense/slides/*.pptx
+!docs/defense/slides/模板.pptx
 
 # 前端依赖（app/web/dist 构建产物要提交，演示机不用装 Node）
 app/web/node_modules/

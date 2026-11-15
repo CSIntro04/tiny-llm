@@ -1,6 +1,6 @@
 # 模型结构、参数量与训练设置
 
-实现：[`src/model.py`](../src/model.py)（手写，只用 `nn.Linear`、`nn.Embedding`、`nn.LayerNorm` 和 `F.scaled_dot_product_attention`）。设计说明见 [03-model.md](03-model.md)。
+实现：[`src/model.py`](../../src/model.py)（手写，只用 `nn.Linear`、`nn.Embedding`、`nn.LayerNorm` 和 `F.scaled_dot_product_attention`）。设计说明见 [03-model.md](../design/03-model.md)。
 
 记号：B = batch，T = 序列长度（≤ 512），C = `n_embd`，nh = `n_head`，hs = C / nh = 64，V = 8192，L = `n_layer`。
 

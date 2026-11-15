@@ -1,6 +1,6 @@
 # 生成答辩 PPT 用的 conda 环境（独立于训练用的 tiny-llm 环境，不需要 torch）。
-# 创建：conda env create -f docs/slides/environment.yml
-# 使用：conda run -n slides python docs/slides/build_slides.py
+# 创建：conda env create -f docs/defense/slides/environment.yml
+# 使用：conda run -n slides python docs/defense/slides/build_slides.py
 # 只用 conda-forge 频道（镜像在 ~/.condarc 里配置为清华 TUNA）。版本是 2026-11-15 实际装上并成功生成 PPT 的版本。
 # 渲染成图片检查排版（可选）另需系统包：sudo apt install -y libreoffice-impress poppler-utils
 name: slides

@@ -11,7 +11,7 @@ data/processed/tokenizer.json           在混合语料上训练的 BPE（词表
 data/processed/smollm_train.bin  smollm_val.bin
 data/processed/tinystories_train.bin  tinystories_val.bin     均为 np.uint16 的 token id 序列
 data/processed/meta.json                词表、分词器、各来源 token 数、混合比例
-docs/data.md                            数据集说明（交付物）
+docs/report/data.md                            数据集说明（交付物）
 ```
 
 ## 前置条件
@@ -44,7 +44,7 @@ docs/data.md                            数据集说明（交付物）
 
 - 用 `huggingface_hub.hf_hub_download` 按文件下载（可断点续传）。只下 parquet，**不要**下 TinyStories 仓库里的 `TinyStories-train.txt`、`TinyStoriesV2-GPT4-train.txt`、`TinyStories_all_data.tar.gz`、`MLP_input_output.npy`（内容重复或无关，合计 6GB+）。
 - 国内访问 HuggingFace 较慢时，可设环境变量 `HF_ENDPOINT` 指向镜像站（先确认镜像可用）。
-- 下载后记录每个文件的大小和 sha256 到 `docs/data.md`。
+- 下载后记录每个文件的大小和 sha256 到 `docs/report/data.md`。
 
 ## 要写的文件与函数签名
 
@@ -207,7 +207,7 @@ M2 时用 `--shards all` 重跑（复用 M1 训练好的分词器还是重训，
 - `x` 和 `y` 的关系？为什么叫 next-token prediction？
 - 数据许可分别是什么？使用时要注意什么？
 
-## 产出：`docs/data.md` 模板
+## 产出：`docs/report/data.md` 模板
 
 ```markdown
 # 数据集说明

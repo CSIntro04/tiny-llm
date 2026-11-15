@@ -1,4 +1,6 @@
-# 阶段 7 · Gradio 交互界面
+# 阶段 7 · 交互界面（网页版 + Gradio 备用）
+
+> 本文前半部分是最初的 Gradio 方案（现为备用界面 `app/app.py`）；答辩用的正式界面是后半部分「网页界面：React + shadcn/ui」一节（`app/server.py` + `app/web/`）。
 
 ## 目标
 

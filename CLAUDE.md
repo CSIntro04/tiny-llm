@@ -21,7 +21,7 @@
 - 如果在原生 Windows 上运行，`torch.compile` 默认关闭（Triton 支持不好），通过配置项 `compile` 来开关。DataLoader 的 `num_workers` 在 Windows 上设成 0 或者加 `if __name__ == "__main__"` 保护。
 - 环境用 **Miniconda + Python 3.12**，环境名 `tiny-llm`。安装包一律走**清华 TUNA 镜像**（conda 和 pip 都是）；数据集从 HuggingFace 下载（见下方"工作方式"中的数据下载规则）。
 - **能 `conda install`（conda-forge）就不用 pip**；pip 只作兜底（例如 conda-forge 没有支持 sm_120 的 PyTorch 构建时），用了要在文档里记录原因。不要混用 `defaults` 和 `conda-forge` 频道。
-- 依赖以 `environment.yml` 为主，`requirements.txt` 为辅（版本保持一致）。详见 `docs/01-environment.md`。
+- 依赖以 `environment.yml` 为主，`requirements.txt` 为辅（版本保持一致）。详见 `docs/design/01-environment.md`。
 
 ## 模型规模目标
 
@@ -46,19 +46,26 @@
 ```
 data/            原始和处理后的数据（大文件不进 git）
   raw/
-  processed/     train.bin / val.bin（uint16 token id）、meta.json（词表）
-configs/         每个实验一个 yaml 或 py 配置
+  processed/     {smollm,tinystories}_{train,val}.bin（uint16 token id）、meta.json、tokenizer.json
+  processed_char/  字符级分词的同类文件（实验 C）
+configs/         每个实验一个 yaml 配置
 src/
   tokenizer.py   词元化（字符级 / BPE）
   prepare.py     数据清洗、切分训练集和验证集、编码保存
   model.py       Transformer 实现（手写）
   train.py       训练循环
-  sample.py      命令行生成
+  sample.py      命令行生成（generate / generate_stream 供界面复用）
   utils.py
-app/             交互界面（Gradio）
+  evaluate.py  eval_prompts.py  plot_compare.py  score_blind.py  export.py  demo_check.py  check_env.py
+app/             交互界面：server.py（FastAPI）+ web/（React 前端，dist/ 已提交）；app.py 是 Gradio 备用版；common.py 共用
+tests/           pytest 测试
 runs/            每次训练的输出：checkpoint、日志、loss 曲线、配置副本
-notebooks/       分析与画图
-docs/            报告素材：数据说明、模型结构图、实验对比
+docs/            README.md 索引；DEVELOPING.md 继续开发指南
+  design/        阶段设计文档 00–08（计划 + 实现记录）
+  report/        交付文档：data.md  model.md  experiments.md
+  defense/       答辩：qa.md  demo.md  glossary.md  slides/
+  results/       生成样例 samples_*、盲评 blind_eval/（脚本生成）
+  figures/       图和结果表（界面与 PPT 直接读这里，路径不要改）
 ```
 
 ## 实现约定
@@ -86,7 +93,7 @@ python app/app.py                                   # 启动交互界面
 - **长时间训练先问**：预计超过 10 分钟的训练，先告诉用户配置、预计耗时和显存，用户确认后再跑。验证代码时用 `--max_iters 50` 之类的参数做冒烟测试。
 - 改动模型结构或训练逻辑后，先跑一个**过拟合测试**：在一个很小的 batch 上，loss 应该能降到接近 0。
 - 不要删除或覆盖 `runs/` 下已有的实验结果。新实验用新目录名。
-- **数据下载**：下面两个数据集的指定文件**已经过用户确认**（总计约 3.7GB），按 `docs/02-data.md` 的两步计划下载即可，不用再问：
+- **数据下载**：下面两个数据集的指定文件**已经过用户确认**（总计约 3.7GB），按 `docs/design/02-data.md` 的两步计划下载即可，不用再问：
   - `ecreeth/1b-smollm-corpus`：`train-0000{0..8}-of-00009.parquet`，约 2.67GB。
   - `roneneldan/TinyStories`：`data/train-0000{0..3}-of-00004-*.parquet` + `data/validation-*.parquet`，约 1GB。
   - 不要下载这两个仓库里的其他大文件（如 `TinyStories-train.txt`、`TinyStoriesV2-GPT4-train.txt`、`TinyStories_all_data.tar.gz`、`MLP_input_output.npy`）。
@@ -101,6 +108,6 @@ python app/app.py                                   # 启动交互界面
 - [x] 数据集说明：来源、许可、大小、清洗步骤、词表大小
 - [x] 至少一个训练好的模型和 loss 曲线
 - [x] 至少两组对比实验（比如模型大小、数据量、学习率、temperature），保留生成样例
-- [x] Gradio 交互界面：输入 prompt，调节长度和温度，选择不同的 checkpoint
+- [x] 交互界面（网页版 + Gradio 备用）：输入 prompt，调节长度和温度，选择不同的 checkpoint
 - [x] 模型结构图和参数量统计
 - [x] README：如何复现

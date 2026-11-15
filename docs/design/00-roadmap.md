@@ -6,7 +6,7 @@
 
 - **s10m**（0.01B，训练 3 亿 token）、**s50m**（0.05B，10 亿）、**s100m**（0.1B，15 亿）
 
-用相同数据、相同随机种子、相同有效 batch 训练，token 预算按规模分配。对比两个语料上的 val loss、相同 token 数下的曲线、生成质量和训练成本；再用 Gradio 界面展示续写效果和采样参数的影响。重点是**每个组员都能讲清楚每一行核心代码**。
+用相同数据、相同随机种子、相同有效 batch 训练，token 预算按规模分配。对比两个语料上的 val loss、相同 token 数下的曲线、生成质量和训练成本；再用网页界面展示续写效果和采样参数的影响。重点是**每个组员都能讲清楚每一行核心代码**。
 
 ## 阶段与依赖
 
@@ -14,7 +14,7 @@
 graph LR
   S1[1 环境] --> S2[2 数据/词元化] --> S3[3 模型] --> S4[4 训练] --> S5[5 采样]
   S5 --> S6[6 对比实验]
-  S5 --> S7[7 Gradio 界面]
+  S5 --> S7[7 网页界面]
   S6 --> S8[8 报告/答辩]
   S7 --> S8
 ```
@@ -22,13 +22,13 @@ graph LR
 | 阶段 | 主要产物 | 预计工作量 |
 |---|---|---|
 | 1 环境 | `environment.yml`、`requirements.txt`、`src/check_env.py`、`.gitignore` | 0.5 天 |
-| 2 数据 | `src/tokenizer.py`、`src/prepare.py`、`data/processed/*`、`docs/data.md` | 1–1.5 天 |
+| 2 数据 | `src/tokenizer.py`、`src/prepare.py`、`data/processed/*`、`docs/report/data.md` | 1–1.5 天 |
 | 3 模型 | `src/model.py`、`tests/test_model.py` | 1–1.5 天 |
 | 4 训练 | `src/train.py`、`src/utils.py`、`configs/*.yaml` | 1.5 天 |
 | 5 采样 | `src/sample.py` | 0.5 天 |
-| 6 实验 | 3 个正式 run、`src/plot_compare.py`、`docs/experiments.md` | 训练实际约 2.8 小时（云端 RTX 5090）+ 1 天分析 |
+| 6 实验 | 3 个正式 run、`src/plot_compare.py`、`docs/report/experiments.md` | 训练实际约 2.8 小时（云端 RTX 5090）+ 1 天分析 |
 | 7 界面 | `app/app.py` | 1 天 |
-| 8 报告 | `README.md`、`docs/model.md`、答辩材料 | 1 天 |
+| 8 报告 | `README.md`、`docs/report/model.md`、答辩材料 | 1 天 |
 
 ## 里程碑
 
@@ -36,8 +36,8 @@ graph LR
 |---|---|---|
 | **M1 流程跑通** | 两个数据集各 1 个分片（~0.57GB）+ debug 模型，阶段 1–5 的最小版本 | `sample.py` 能输出像样的英文片段；过拟合测试通过 |
 | **M2 第一个正式模型** | 全量数据（~3.7GB）+ s10m 完整训练（5090 上 4.6 分钟）+ 界面雏形 | `runs/s10m/` 有 loss 曲线，界面能生成 |
-| **M3 三模型对比** | s50m（45 分钟）、s100m（1 小时 56 分）训练完成 ✅，实验 A（含三人盲评）、B 完成 ✅，实验 C（字符级 vs BPE，本地 16 分钟）完成 ✅；界面完成 ✅ | `docs/experiments.md` 有叠图、样例表、结论 |
-| **M4 交付** | README ✅、结构图与参数量（`docs/model.md`）✅、答辩问题清单（`docs/qa.md`）✅、答辩 PPT 与现场方案（`docs/slides/`、`docs/demo.md`）✅；干净环境复现、模拟答辩待组员完成 | 新机器按 README 能复现 |
+| **M3 三模型对比** | s50m（45 分钟）、s100m（1 小时 56 分）训练完成 ✅，实验 A（含三人盲评）、B 完成 ✅，实验 C（字符级 vs BPE，本地 16 分钟）完成 ✅；界面完成 ✅ | `docs/report/experiments.md` 有叠图、样例表、结论 |
+| **M4 交付** | README ✅、结构图与参数量（`docs/report/model.md`）✅、答辩问题清单（`docs/defense/qa.md`）✅、答辩 PPT 与现场方案（`docs/defense/slides/`、`docs/defense/demo.md`）✅；干净环境复现、模拟答辩待组员完成 | 新机器按 README 能复现 |
 
 ## 模型规模
 
@@ -68,19 +68,19 @@ graph LR
 
 本地 5060 Ti 冒烟实测合计约 13 小时（有效算力约 33 TFLOPS）；正式训练改在云端 RTX 5090 上进行，有效算力约 150 TFLOPS，**三个模型合计约 2.8 小时**（只算训练步，不含评估和编译）。有效 batch 不变（256 × 512 token），只按显存调整 micro-batch × accum。显存峰值是 `torch.cuda.max_memory_allocated()`。训练结果见 [04-training.md](04-training.md) 的"正式训练结果"。
 
-**数据与磁盘**：下载约 3.5GB（SmolLM 2.67GB + TinyStories 约 1GB），编码后 bin 共 3.3GB。**实测（阶段 2，8k BPE）**：训练集共 **16.3 亿 token**（SmolLM 11.46 亿 + TinyStories 4.85 亿，自然混合比例约 70:30），验证集 SmolLM 566 万、TinyStories 487 万 token。s100m 的 15 亿 token 预算约为 0.92 轮，s10m/s50m 分别约 18%/61%。详见 [data.md](data.md)。
+**数据与磁盘**：下载约 3.5GB（SmolLM 2.67GB + TinyStories 约 1GB），编码后 bin 共 3.3GB。**实测（阶段 2，8k BPE）**：训练集共 **16.3 亿 token**（SmolLM 11.46 亿 + TinyStories 4.85 亿，自然混合比例约 70:30），验证集 SmolLM 566 万、TinyStories 487 万 token。s100m 的 15 亿 token 预算约为 0.92 轮，s10m/s50m 分别约 18%/61%。详见 [data.md](../report/data.md)。
 
 ## 交付物对照表
 
 | 要求（TARGET.md / CLAUDE.md） | 对应阶段 | 产物 | 状态 |
 |---|---|---|---|
-| 准备数据集，预处理与词元化 | 2 | `src/prepare.py`、`src/tokenizer.py`、`docs/data.md` | ✅ |
+| 准备数据集，预处理与词元化 | 2 | `src/prepare.py`、`src/tokenizer.py`、`docs/report/data.md` | ✅ |
 | 从零实现 Decoder-only Transformer | 3 | `src/model.py` | ✅ |
 | next-token prediction 训练，记录 loss 曲线 | 4 | `src/train.py`、`runs/*/log.csv`、`loss_curve.png` | ✅ |
 | 交互界面：输入 prompt、调长度和温度、选 checkpoint | 5、7 | `src/sample.py`、`app/app.py` | ✅ |
 | 至少比较两种训练设置或采样参数 | 6 | 实验 A（模型规模，分来源 val loss）+ 实验 B（采样参数）+ 实验 C（字符级 vs BPE） | ✅ |
-| 说明数据来源、模型结构、训练设置 | 2、3、4、8 | `docs/data.md`、`docs/model.md`、配置副本 | ✅ |
-| 模型结构图和参数量统计 | 3、8 | `docs/model.md` | ✅ |
+| 说明数据来源、模型结构、训练设置 | 2、3、4、8 | `docs/report/data.md`、`docs/report/model.md`、配置副本 | ✅ |
+| 模型结构图和参数量统计 | 3、8 | `docs/report/model.md` | ✅ |
 | README：如何复现 | 8 | 根目录 `README.md` | ✅（冒烟验证；干净环境复现待组员） |
 
 ## 分工建议（3 人组）

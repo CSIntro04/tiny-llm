@@ -8,7 +8,7 @@
 - **实验 B：采样参数**（temperature × top-k）
 - 实验 C（可选）：字符级 vs BPE 分词
 
-产出 `docs/experiments.md`：叠图、表格、生成样例、结论。
+产出 `docs/report/experiments.md`：叠图、表格、生成样例、结论。
 
 ## 前置条件
 
@@ -103,14 +103,14 @@ def export_markdown(rows, out_md: str) -> None: ...
 
 ```bash
 python src/plot_compare.py --runs runs/s10m runs/s50m runs/s100m --out docs/figures/
-python src/eval_prompts.py --runs runs/s10m runs/s50m runs/s100m --out docs/samples_A.jsonl
-python src/eval_prompts.py --runs runs/s100m --grid sampling --out docs/samples_B.jsonl
+python src/eval_prompts.py --runs runs/s10m runs/s50m runs/s100m --out docs/results/samples_A.jsonl
+python src/eval_prompts.py --runs runs/s100m --grid sampling --out docs/results/samples_B.jsonl
 ```
 
 - `docs/figures/` 下有 val loss 叠图（加权 + 两个来源各一张，横轴 tokens）、scaling 图（分来源）、train-val gap 图。
-- `docs/experiments.md` 包含：实验设置表、最终结果表、样例表、人工打分表、结论（每个实验至少 3 条有数据支撑的结论）。
+- `docs/report/experiments.md` 包含：实验设置表、最终结果表、样例表、人工打分表、结论（每个实验至少 3 条有数据支撑的结论）。
 
-## 实验记录模板（每个 run 一条，写进 `docs/experiments.md`）
+## 实验记录模板（每个 run 一条，写进 `docs/report/experiments.md`）
 
 ```markdown
 ### <run 名>

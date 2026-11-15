@@ -22,7 +22,7 @@ def _small_cfg(**kw) -> GPTConfig:
     return GPTConfig(**MODEL_PRESETS["debug"], block_size=64, **kw)
 
 
-# 文档 docs/03-model.md 里的期望值（单位 M）：非 embedding, 总参数
+# 文档 docs/design/03-model.md 里的期望值（单位 M）：非 embedding, 总参数
 EXPECTED = {
     "debug": (3.16, 5.39),
     "s10m": (10.65, 13.99),

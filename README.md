@@ -40,7 +40,7 @@ python app/server.py --preload all
 - 没有 GPU 也能跑（自动用 CPU，s100m 约 25 tok/s）。
 - 想先确认一切正常：`python src/demo_check.py`（检查 GPU、三个 checkpoint、生成结果是否与记录一致）。
 - 网页打不开时的备用界面：`python app/app.py --preload all`（Gradio 版，功能相同，没有流式输出）。
-- 页面里有什么、怎么用，见第 6 节；答辩现场的演示流程见 `docs/demo.md`。
+- 页面里有什么、怎么用，见第 6 节；答辩现场的演示流程见 `docs/defense/demo.md`。
 
 ## 1. 环境
 
@@ -73,7 +73,7 @@ python app/server.py --preload all
    python src/check_env.py                 # 检查 GPU、bf16、SDPA、torch.compile
    ```
 
-详见 [docs/01-environment.md](docs/01-environment.md)。原生 Windows 上把配置里的 `compile` 设成 `false`。
+详见 [docs/design/01-environment.md](docs/design/01-environment.md)。原生 Windows 上把配置里的 `compile` 设成 `false`。
 
 ## 2. 数据
 
@@ -88,7 +88,7 @@ python src/prepare.py --datasets smollm,tinystories --tokenizer bpe --vocab_size
 - 输出在 `data/processed/`：`{smollm,tinystories}_{train,val}.bin`、`meta.json`、`tokenizer.json`（后两个已经在 git 里）。
 - 全量统计：训练集 16.3 亿 token（SmolLM 11.46 亿 + TinyStories 4.85 亿，自然比例约 70:30），验证集 1054 万 token。
 
-来源、许可、清洗规则和丢弃统计见 [docs/data.md](docs/data.md)。
+来源、许可、清洗规则和丢弃统计见 [docs/report/data.md](docs/report/data.md)。
 
 ## 3. 训练
 
@@ -164,7 +164,7 @@ python app/app.py --preload all      # 备用：Gradio 版界面，功能相同�
 - **实验 B（采样参数）**：greedy / 低温度会整句复读，T=1.5 会编出不存在的词；top-k=50 能在高温下兜底。推荐 T=0.7–0.8 + top-k=50。
 - **实验 C（字符级 vs BPE）**：不同分词器的 loss 不能直接比，要换成 bits-per-byte。相同 token 预算下 BPE 更好（SmolLM 1.367 vs 1.602 bpb）。
 
-完整结果、图表、样例和盲评见 [docs/experiments.md](docs/experiments.md)。模型结构和参数量见 [docs/model.md](docs/model.md)。
+完整结果、图表、样例和盲评见 [docs/report/experiments.md](docs/report/experiments.md)。模型结构和参数量见 [docs/report/model.md](docs/report/model.md)。
 
 ## 8. 测试
 
@@ -183,8 +183,11 @@ app/          server.py（FastAPI 后端）  web/（React + shadcn/ui 前端） 
 tests/        pytest 测试
 data/         raw/（下载的 parquet，不进 git）  processed/（bin 不进 git；meta.json、tokenizer.json 进 git）
 runs/         每次训练的输出（checkpoint 不进 git）
-docs/         分阶段文档（00–08）、data.md、model.md、experiments.md、qa.md、demo.md、figures/、slides/
+docs/         design/（阶段文档 00–08）  report/（数据、模型、实验）  defense/（问答、演示、PPT）
+              results/（生成样例、盲评）  figures/（图和结果表）
 ```
+
+文档索引见 [docs/README.md](docs/README.md)；要在这个项目上继续开发，先读 [docs/DEVELOPING.md](docs/DEVELOPING.md)。
 
 ## 数据许可
 

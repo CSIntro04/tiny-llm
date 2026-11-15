@@ -1,8 +1,8 @@
 """汇总实验 A 的人工盲评：读三位组员填好的打分表，按答案还原模型，求平均。
 
 用法：
-    python src/score_blind.py --sheets docs/blind_eval/R1.md docs/blind_eval/R2.md docs/blind_eval/R3.md \
-        --flip_repeat R3 --out docs/blind_eval/summary.md
+    python src/score_blind.py --sheets docs/results/blind_eval/R1.md docs/results/blind_eval/R2.md docs/results/blind_eval/R3.md \
+        --flip_repeat R3 --out docs/results/blind_eval/summary.md
 
 --flip_repeat：某位打分人把"重复"一项理解反了（重复越多分越高）时，把他的这一项换算成 6 − x。
 判断依据是这一项和自动指标 distinct-2 的相关系数：正常应为正，反了会是明显的负数（脚本会打印出来）。
@@ -53,10 +53,10 @@ def corr(a: list[float], b: list[float]) -> float:
 def main() -> None:
     p = argparse.ArgumentParser(description="汇总人工盲评")
     p.add_argument("--sheets", nargs="+", required=True)
-    p.add_argument("--key", default="docs/blind_eval_key.json")
-    p.add_argument("--samples", default="docs/samples_A.jsonl")
+    p.add_argument("--key", default="docs/results/blind_eval/key.json")
+    p.add_argument("--samples", default="docs/results/samples_A.jsonl")
     p.add_argument("--flip_repeat", nargs="*", default=[], help="需要把'重复'换算成 6−x 的打分人（文件名不含 .md）")
-    p.add_argument("--out", default="docs/blind_eval/summary.md")
+    p.add_argument("--out", default="docs/results/blind_eval/summary.md")
     args = p.parse_args()
 
     key = json.loads(Path(args.key).read_text(encoding="utf-8"))

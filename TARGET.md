@@ -20,4 +20,4 @@ Reference: [1] Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., G
 - 词元化：在混合语料上自训练 BPE（词表 8192）。
 - 训练 token 数按模型规模分配（接近 Chinchilla 的约 20 token/参数）。三个模型使用相同数据、相同随机种子、相同有效 batch，比较：两个语料上各自的验证集 loss、**相同已训练 token 数**下的 loss 曲线、生成质量（人工打分）、训练成本（时间、显存、吞吐）。
 - 另外比较不同采样参数（temperature、top-k）下的生成结果。
-- 分阶段实现方案见 `docs/00-roadmap.md`。
+- 分阶段实现方案见 `docs/design/00-roadmap.md`。

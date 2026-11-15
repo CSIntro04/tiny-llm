@@ -230,7 +230,7 @@ def param_breakdown(model: GPT) -> dict[str, int]:
 
 
 def _report() -> None:
-    """打印四档预设的参数量（含按组件拆分），以及按 docs/00-roadmap.md 的方法粗估的显存和计算量。"""
+    """打印四档预设的参数量（含按组件拆分），以及按 docs/design/00-roadmap.md 的方法粗估的显存和计算量。"""
     print(f"{'名称':<6} {'层/维/头':<10} {'非emb(M)':>9} {'总参数(M)':>10} "
           f"{'权重+优化器(GB)':>15} {'FLOPs/token(M)':>15}")
     rows = {}

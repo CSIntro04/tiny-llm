@@ -5,7 +5,7 @@
 ## 一、提前一天：彩排
 
 - [ ] 按本文第三节完整走一遍，计时（目标 2 分钟以内）。
-- [ ] 接投影仪（或外接显示器，1920×1080）检查：浏览器缩放到 125%，Gradio 的输出文字后排能看清。
+- [ ] 接投影仪（或外接显示器，1920×1080）检查：浏览器缩放到 125%，输出文字后排能看清。
 - [ ] 录一段完整演示的屏幕录像（Windows：Win+Alt+R 或 OBS），存到 U 盘和笔记本桌面，作为最后一级兜底。
 - [ ] 确认 `runs/{s10m,s50m,s100m}/ckpt_best.pt` 都在（`python src/demo_check.py` 会检查）。
 - [ ] PPT 拷到 U 盘一份，以防演示机不能投影时用教室电脑放 PPT。
@@ -111,5 +111,5 @@ python src/sample.py --run runs/s100m --prompt "Photosynthesis is the process" -
 ## 五、现场可能被要求的临时操作
 
 - **"换个 prompt 试试"**：直接输入，seed 设 -1（每次随机，界面会显示用了哪个 seed）。英文 prompt 效果好；中文 prompt 模型没学过，会输出乱码（数据里没有中文，可以顺便解释词表和训练数据的关系）。
-- **"看训练中途的模型"**：单模型页的 checkpoint 下拉框选 `runs/s100m/ckpt_tok100M.pt`，对比最终模型（见 [samples_progress.md](samples_progress.md)）。
+- **"看训练中途的模型"**：单模型页的 checkpoint 下拉框选 `runs/s100m/ckpt_tok100M.pt`，对比最终模型（见 [samples_progress.md](../results/samples_progress.md)）。
 - **"讲一下代码"**：VS Code 里的 `src/model.py:66`（注意力 forward），讲稿见 [qa.md](qa.md) 第三节。

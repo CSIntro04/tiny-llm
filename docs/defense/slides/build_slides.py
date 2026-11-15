@@ -1,12 +1,12 @@
-"""用 docs/slides/模板.pptx 生成答辩 PPT：docs/slides/B03-答辩.pptx（约 10 分钟，每页带演讲备注）。
+"""用 docs/defense/slides/模板.pptx 生成答辩 PPT：docs/defense/slides/B03-答辩.pptx（约 10 分钟，每页带演讲备注）。
 
 运行环境：独立的 conda 环境 slides（python-pptx），不需要 torch：
-    conda env create -f docs/slides/environment.yml
-    conda run -n slides python docs/slides/build_slides.py
+    conda env create -f docs/defense/slides/environment.yml
+    conda run -n slides python docs/defense/slides/build_slides.py
 
 做法：保留模板的封面、目录、节标题、封底四页并替换文字；其余内容页都用模板的"内容页5"版式新建，
 图表用 PowerPoint 原生图表（可在 PowerPoint 里改数据），实验曲线用 docs/figures/ 里的 png。
-所有数字来自 docs/experiments.md、docs/data.md、docs/model.md。
+所有数字来自 docs/report/ 下的 experiments.md、data.md、model.md。
 """
 
 from __future__ import annotations
@@ -24,9 +24,9 @@ from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.oxml.ns import qn
 from pptx.util import Emu, Inches, Pt
 
-ROOT = Path(__file__).resolve().parents[2]
-TEMPLATE = ROOT / "docs/slides/模板.pptx"
-OUT = ROOT / "docs/slides/B03-答辩.pptx"
+ROOT = Path(__file__).resolve().parents[3]
+TEMPLATE = ROOT / "docs/defense/slides/模板.pptx"
+OUT = ROOT / "docs/defense/slides/B03-答辩.pptx"
 FIG = ROOT / "docs/figures"
 
 # 模板色彩规范：主色深蓝、平衡色金色、对比色交大红
@@ -603,7 +603,7 @@ def slide_summary(s) -> None:
 
 def slide_backup(s) -> None:
     set_title(s, "附录：演示备用样例（seed 42）")
-    lead(s, "未注明时 T = 0.8、top-k 50；完整样例见 docs/samples_A.md、samples_B.md")
+    lead(s, "未注明时 T = 0.8、top-k 50；完整样例见 docs/results/samples_A.md、samples_B.md")
     rows = [("prompt", "对照 1", "对照 2"),
             ("Once upon a time",
              "s10m：, there was a little boy named Timmy. Timmy loved to play with his toy car all day long. One day, Timmy's mommy gave him a big package of a new toy car…",
@@ -649,8 +649,8 @@ def build() -> None:
     notes(cover, "【约 10 秒】各位老师好，我们组的题目是 B03：从零训练一个迷你语言模型。")
     notes(toc, "【约 10 秒】分四部分：任务与数据、模型与训练、三组对比实验，最后现场演示界面。")
     notes(demo, "【约 2 分钟】切到浏览器（http://127.0.0.1:7860，提前启动 python app/app.py --preload all）。"
-                "按 docs/demo.md 第三节的脚本演示；出问题按第四节兜底，或翻到最后的附录页。")
-    notes(thanks, "谢谢，欢迎提问。问答准备见 docs/qa.md。")
+                "按 docs/defense/demo.md 第三节的脚本演示；出问题按第四节兜底，或翻到最后的附录页。")
+    notes(thanks, "谢谢，欢迎提问。问答准备见 docs/defense/qa.md。")
 
     task, data, model, train, curves, human, sampling, tokenizer, summary, backup = new
     order = [cover, toc, task, data, model, train, curves, human, sampling, tokenizer, demo,

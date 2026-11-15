@@ -1,12 +1,12 @@
 """固定 prompt 批量生成，用于实验 A（模型规模）、学习过程演变、实验 B（采样参数）。
 
 用法：
-    python src/eval_prompts.py --runs runs/s10m runs/s50m runs/s100m --grid scale --out docs/samples_A.jsonl
-    python src/eval_prompts.py --runs runs/s100m --grid progress --out docs/samples_progress.jsonl
-    python src/eval_prompts.py --runs runs/s100m --grid sampling --out docs/samples_B.jsonl
+    python src/eval_prompts.py --runs runs/s10m runs/s50m runs/s100m --grid scale --out docs/results/samples_A.jsonl
+    python src/eval_prompts.py --runs runs/s100m --grid progress --out docs/results/samples_progress.jsonl
+    python src/eval_prompts.py --runs runs/s100m --grid sampling --out docs/results/samples_B.jsonl
 
 每种 grid 输出：一个 jsonl（每行一条生成）+ 同名 .md（样例表和汇总）。
-scale 还会输出盲评表 docs/blind_eval_sheet.md 和答案 docs/blind_eval_key.json。
+scale 还会输出盲评表 docs/results/blind_eval/sheet.md 和答案 docs/results/blind_eval/key.json。
 生成逻辑全部复用 sample.py 的 load_model / generate_text，这里只负责组织网格和统计。
 """
 
@@ -157,7 +157,7 @@ def export_blind_sheet(rows: list[dict], out_md: str, key_json: str, seed: int =
         "# 实验 A 人工盲评表\n",
         "每条按 1–5 分打分（5 最好）：**语法**通顺度、内容**连贯**性（前后一致、不跑题）、"
         "**事实**合理性（只给说明文类打，故事类填 -）、**重复**程度（越少越高分）。",
-        "三位组员各自独立填写一份，**打分前不要打开 `blind_eval_key.json`**。\n",
+        "三位组员各自独立填写一份，**打分前不要打开同目录下的 `key.json`**。\n",
     ]
     for i, idx in enumerate(order, 1):
         r = rows[idx]
@@ -206,8 +206,9 @@ def main() -> None:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
     export_markdown(rows, str(out.with_suffix(".md")), args.grid)
     if args.grid == "scale":
-        export_blind_sheet(rows, str(out.parent / "blind_eval_sheet.md"),
-                           str(out.parent / "blind_eval_key.json"))
+        blind = out.parent / "blind_eval"  # 盲评表和答案放在 jsonl 同级的 blind_eval/ 里
+        blind.mkdir(exist_ok=True)
+        export_blind_sheet(rows, str(blind / "sheet.md"), str(blind / "key.json"))
     print(f"共 {len(rows)} 条，写入 {out} 和 {out.with_suffix('.md')}")
 
 

@@ -2,7 +2,7 @@
 
 ## 目标
 
-`src/sample.py` 从任意 run 加载 checkpoint，按给定 prompt 自回归生成文本，支持最大长度、temperature、top-k、top-p、随机种子和多条采样。`generate()` 函数同时供 Gradio 界面复用。
+`src/sample.py` 从任意 run 加载 checkpoint，按给定 prompt 自回归生成文本，支持最大长度、temperature、top-k、top-p、随机种子和多条采样。`generate()` 函数同时供网页界面（`app/server.py`，流式版 `generate_stream()`）和 Gradio 备用界面（`app/app.py`）复用。
 
 ## 前置条件
 

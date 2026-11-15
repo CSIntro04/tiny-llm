@@ -1,6 +1,6 @@
 # 对比实验结果
 
-实验计划见 [06-experiments.md](06-experiments.md)。本文件记录实际结果。所有数字和图都可以用文末命令重新生成。
+实验计划见 [06-experiments.md](../design/06-experiments.md)。本文件记录实际结果。所有数字和图都可以用文末命令重新生成。
 
 | 实验 | 变量 | 状态 |
 |---|---|---|
@@ -65,15 +65,15 @@
 
 | 加权 val loss（横轴 token，对数） | 训练时间 |
 |---|---|
-| ![](figures/val_overlay_tokens.png) | ![](figures/val_overlay_time.png) |
+| ![](../figures/val_overlay_tokens.png) | ![](../figures/val_overlay_time.png) |
 | **SmolLM** val loss | **TinyStories** val loss |
-| ![](figures/val_smollm_overlay.png) | ![](figures/val_tinystories_overlay.png) |
+| ![](../figures/val_smollm_overlay.png) | ![](../figures/val_tinystories_overlay.png) |
 | **Scaling**：参数量 vs 最终 val loss | **train − val**（看过拟合） |
-| ![](figures/scaling.png) | ![](figures/train_val_gap.png) |
+| ![](../figures/scaling.png) | ![](../figures/train_val_gap.png) |
 
 ### 生成样例
 
-固定 10 个 prompt（故事、说明文各 5 个），每个模型 `temperature=0.8, top_k=50, seed=42`，最多 200 个新 token。全部样例见 [samples_A.md](samples_A.md)。
+固定 10 个 prompt（故事、说明文各 5 个），每个模型 `temperature=0.8, top_k=50, seed=42`，最多 200 个新 token。全部样例见 [samples_A.md](../results/samples_A.md)。
 
 | prompt | s10m | s50m | s100m |
 |---|---|---|---|
@@ -90,7 +90,7 @@
 
 ### 学习过程：s100m 的四个 checkpoint
 
-同一个 prompt、同一个 seed，全部样例见 [samples_progress.md](samples_progress.md)。
+同一个 prompt、同一个 seed，全部样例见 [samples_progress.md](../results/samples_progress.md)。
 
 | checkpoint | Once upon a time | Photosynthesis is the process |
 |---|---|---|
@@ -103,9 +103,9 @@
 
 ### 人工盲评
 
-- 打分表：[blind_eval_sheet.md](blind_eval_sheet.md)。30 条样本打乱顺序，看不到模型名，只有编号 S01–S30；答案在 [blind_eval_key.json](blind_eval_key.json)。
-- 三位组员各自独立打分，填好的表在 `blind_eval/R1.md`–`R3.md`（匿名编号）。每条 4 项，每项 1–5 分：语法、连贯、事实（只评说明文）、重复（越少分越高）。
-- 汇总：`python src/score_blind.py --sheets docs/blind_eval/R*.md --flip_repeat R3`，完整结果在 [blind_eval/summary.md](blind_eval/summary.md)。
+- 打分表：[blind_eval/sheet.md](../results/blind_eval/sheet.md)。30 条样本打乱顺序，看不到模型名，只有编号 S01–S30；答案在 [blind_eval/key.json](../results/blind_eval/key.json)。
+- 三位组员各自独立打分，填好的表在 `docs/results/blind_eval/R1.md`–`R3.md`（匿名编号）。每条 4 项，每项 1–5 分：语法、连贯、事实（只评说明文）、重复（越少分越高）。
+- 汇总：`python src/score_blind.py --sheets docs/results/blind_eval/R*.md --flip_repeat R3`，完整结果在 [blind_eval/summary.md](../results/blind_eval/summary.md)。
 
 **数据处理（如实记录）**：
 - R3 的"重复"一项明显是反着打的：这一项和 distinct-2 的相关系数是 −0.75，R1、R2 分别是 +0.58、+0.73。例如 S21 是 s50m 整段复读，R1、R2 给 1 分和 2 分，R3 给 5 分。判断为把规则理解成了"重复越多分越高"，因此这一项按 6−x 换算。换算后，R3 与另外两人在这一项上的相关系数为 +0.72 和 +0.59，和其他项的一致程度相当，说明这样换算是合理的。
@@ -138,7 +138,7 @@
 - 模型：s100m（`ckpt_best.pt`）。
 - 设置：temperature ∈ {0.3, 0.7, 1.0, 1.5} × top-k ∈ {不限, 50}，外加 greedy（T=0）和 T=1.0 + top-p=0.9，共 10 组。
 - prompt：故事 2 个（Once upon a time / Lily wanted to），说明文 2 个（Photosynthesis is the process / The water cycle describes）。
-- seed 1、2、3，每条最多 200 个新 token。全部 120 条样例见 [samples_B.md](samples_B.md)。
+- seed 1、2、3，每条最多 200 个新 token。全部 120 条样例见 [samples_B.md](../results/samples_B.md)。
 
 ### 自动指标
 
@@ -208,7 +208,7 @@
 
 最后一行是参考对照：BPE 版 s10m 训练到 1 亿 token 时的中途 checkpoint，看过约 3.9 亿字节文本；字符级版训练结束时看过约 3 亿字节。两者看过的文本量接近，但 BPE 这个 checkpoint 的学习率还没衰减完，对它不利。
 
-生成样例：同样 10 个 prompt，T=0.8、top-k=50、seed=42。字符级最多生成 800 个字符，约等于 BPE 的 200 个 token。全部样例见 [samples_C.md](samples_C.md)。
+生成样例：同样 10 个 prompt，T=0.8、top-k=50、seed=42。字符级最多生成 800 个字符，约等于 BPE 的 200 个 token。全部样例见 [samples_C.md](../results/samples_C.md)。
 
 | prompt | s10m_char（字符级） | s10m（BPE） |
 |---|---|---|
@@ -231,9 +231,9 @@ python src/plot_compare.py --runs runs/s10m runs/s50m runs/s100m --out docs/figu
 python src/evaluate.py loss --ckpts runs/s10m/ckpt_tok100M.pt runs/s50m/ckpt_tok100M.pt runs/s100m/ckpt_tok100M.pt \
     runs/s10m/ckpt_best.pt runs/s50m/ckpt_tok300M.pt runs/s100m/ckpt_tok300M.pt \
     runs/s50m/ckpt_best.pt runs/s100m/ckpt_tok1000M.pt runs/s100m/ckpt_best.pt --out docs/figures/ckpt_eval.md
-python src/eval_prompts.py --runs runs/s10m runs/s50m runs/s100m --grid scale --out docs/samples_A.jsonl
-python src/eval_prompts.py --runs runs/s100m --grid progress --out docs/samples_progress.jsonl
-python src/eval_prompts.py --runs runs/s100m --grid sampling --out docs/samples_B.jsonl
+python src/eval_prompts.py --runs runs/s10m runs/s50m runs/s100m --grid scale --out docs/results/samples_A.jsonl
+python src/eval_prompts.py --runs runs/s100m --grid progress --out docs/results/samples_progress.jsonl
+python src/eval_prompts.py --runs runs/s100m --grid sampling --out docs/results/samples_B.jsonl
 # 实验 C
 python src/prepare.py --tokenizer char --shards 1 --out_dir data/processed_char
 python src/train.py --config configs/s10m_char.yaml

@@ -7,7 +7,7 @@
 检查项：
 1. CUDA 是否可用、显卡型号；
 2. runs/{s10m,s50m,s100m}/ckpt_best.pt 和分词器是否存在；
-3. 每个模型用 docs/samples_A.jsonl 里同样的 prompt、采样参数和 seed 生成，
+3. 每个模型用 docs/results/samples_A.jsonl 里同样的 prompt、采样参数和 seed 生成，
    前 N 个 token 应与当时记录的样例相同——确认没有拿错 checkpoint（例如拿了 ckpt_tok100M）。
    GPU 上应完全一致；CPU 的浮点运算顺序不同，可能在若干 token 后分叉，只给提示不算失败。
 """
@@ -34,7 +34,7 @@ _loaded: list = []  # 保留模型引用，最后统计三个模型同时在显�
 
 def reference(run: str) -> dict:
     """samples_A.jsonl 里该模型、该 prompt 的记录（T=0.8, top-k=50, seed=42）。"""
-    for line in (ROOT / "docs/samples_A.jsonl").read_text(encoding="utf-8").splitlines():
+    for line in (ROOT / "docs/results/samples_A.jsonl").read_text(encoding="utf-8").splitlines():
         r = json.loads(line)
         if r["run"] == run and r["prompt"] == PROMPT:
             return r
@@ -82,7 +82,7 @@ def main() -> None:
     ok = all([check_run(r, args.device, args.n_tokens) for r in RUNS])
     if args.device.startswith("cuda"):
         print(f"显存占用（三个模型都在显存里）：{torch.cuda.memory_allocated() / 1e9:.2f} GB")
-    print("全部通过，可以启动：python app/app.py --preload all" if ok else "有检查项失败，见上")
+    print("全部通过，可以启动：python app/server.py --preload all（备用：python app/app.py --preload all）" if ok else "有检查项失败，见上")
     sys.exit(0 if ok else 1)
 
 
