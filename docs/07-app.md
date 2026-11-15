@@ -25,22 +25,25 @@ if __name__ == "__main__":
 
 ## 界面布局
 
-**标签页 1：单模型生成**
+**外观**：`gr.themes.Soft`（indigo / cyan）+ `app.py` 里的 `CSS` 常量，顶部渐变横幅；颜色全用主题 CSS 变量，深色模式自动适配；只用系统字体（演示现场离线）。Gradio 6 起 `theme` / `css` 传给 `launch()`。
+
+**标签页 1：单模型生成**（左栏参数、右栏输入与输出的两栏布局）
 
 | 组件 | 说明 |
 |---|---|
-| checkpoint 下拉框 | `list_checkpoints()` 结果，默认 `runs/s100m/ckpt_best.pt`；附"刷新"按钮 |
-| 模型信息 | Markdown：结构、参数量、训练 token 数、最佳 val loss |
+| checkpoint 下拉框 | 左侧参数栏顶部；`list_checkpoints()` 结果，默认 `runs/s100m/ckpt_best.pt`；附 🔄 刷新按钮 |
+| 采样预设 | Greedy / 保守（T=0.5, k=20）/ 默认（T=0.8, k=50）/ 创意（T=1.2, p=0.95），一键改写下面的滑块 |
+| 模型信息 | 右侧顶部一排指标卡：结构、参数量、分词器、训练 token 数、最佳 val loss |
 | prompt 文本框 | 默认 "Once upon a time" |
 | max_new_tokens 滑块 | 10–500，默认 200 |
 | temperature 滑块 | 0–2，步长 0.05，默认 0.8（0 = greedy） |
 | top_k 滑块 | 0–200，默认 50（0 = 不限） |
 | top_p 滑块 | 0.1–1.0，默认 1.0（1.0 = 不限） |
 | seed 数字框 | 默认 42；-1 表示随机 |
-| 生成按钮 / 输出框 | prompt 部分加粗或另色显示，续写部分正常显示 |
+| 生成按钮 / 输出框 | 输出卡片：prompt 部分高亮底色，续写用衬线字体；底部胶囊显示 seed、token 数、用时、tok/s；回车也能生成，"清空"恢复空白 |
 | 示例 | `gr.Examples` 给 6 个预置 prompt：故事类、说明文类各 3 个（与实验 A 的 prompt 一致） |
 
-**标签页 2：三模型对比**：同一 prompt、同一组采样参数、同一 seed，并排三列输出 s10m / s50m / s100m 结果，每列标题显示参数量。
+**标签页 2：三模型对比**：同一 prompt、同一组采样参数、同一 seed，并排三列输出 s10m / s50m / s100m 结果，每列列头是模型名 + 参数量徽章（颜色由浅到深）；采样参数收在默认折叠的面板里。
 
 **标签页 3：训练过程**：选择 run，显示 `loss_curve.png`、`docs/figures/` 中的叠图，以及最终结果表。
 
@@ -88,3 +91,32 @@ python app/app.py      # 浏览器打开 http://127.0.0.1:7860
 - seed=-1 时随机生成一个 seed，并显示在输出下方，方便复现那次结果。
 - 流式输出（可选项）这次没做。
 - 自动验收（用 `gradio_client` 调接口，本地 RTX 5060 Ti）：同参数同 seed 结果一致 ✅；seed=-1 每次不同 ✅；T=0 时换 seed 结果也不变 ✅；三模型对比 200 token 共 3.1 秒（包含首次加载 s10m、s50m 的时间）✅；切换 checkpoint 时模型信息随之更新 ✅。
+
+## 网页界面：React + shadcn/ui（2026-11-15 新增）
+
+Gradio 版保留作备用；正式演示改用自己写的网页前端，界面更清爽，并实现了流式输出。
+
+```
+浏览器（app/web/dist 静态页面，React + shadcn/ui）
+   │  fetch /api/*            ▲ SSE：每个 token 一条 "data: {...}"
+   ▼                          │
+app/server.py（FastAPI） ── app/common.py（找 checkpoint、缓存模型） ── src/sample.py（generate_stream）
+```
+
+- **shadcn/ui** 不是装进来的黑盒组件库，而是把按钮、滑块、标签页等组件的源码复制进项目（`app/web/src/components/ui/`），样式用 Tailwind 写，可以直接改。
+- **流式输出（SSE，Server-Sent Events）**：生成接口的 HTTP 响应不立刻结束，后端每生成一个 token 就往响应里写一行 `data: {"delta": "..."}`，前端边读边追加到页面上。`src/sample.py:generate_stream` 的循环和 `generate()` 一样、随机数调用顺序也一样，所以同一个 seed 下结果与 `generate_text()` 完全相同（`tests/test_server.py` 验证）。
+- **增量解码**：每步把全部新 token 重新 decode 再减去上次的文本。BPE 按字节合并，一个汉字可能跨两个 token，单独 decode 一个 token 会出现乱码（`\ufffd`），这时先不发，等下一个 token 补齐。
+- **GPU 锁**：`common.GPU_LOCK` 让生成请求排队。`set_seed` 是全局的，两个请求交错执行会互相打乱随机数，结果就不可复现了。三模型对比也是前端依次请求三个模型。
+- **安全**：只接受 `list_checkpoints()` 列出的 checkpoint 路径，`runs/` 目录不整个挂出去（里面有 checkpoint 和优化器状态），只单独提供 `loss_curve.png`。
+- **外观与动效**：参考 beautifului.dev 首页的版式——居中的细线"纸面"，左侧吸顶侧栏（标题、深浅色切换、目录、项目信息），右侧是编号区块（01 单模型生成 … 05 结果表），区块之间用虚线分隔，展示区是浅灰底上放白色卡片。只用中性灰，不用亮色。动效：区块进场依次淡入上移（错开 120ms）；目录的悬停底色会"滑"到鼠标所在条目，并随滚动高亮当前区块；分段选择器的滑块平滑移动；等待第一个 token 时显示 3×3 像素点阵 + 扫光文字 + 计时；新生成的文本片段淡入去模糊，末尾是细竖线光标。系统开启"减少动态效果"时全部关闭。
+- **字体**：英文和数字用 Inter，中文用思源黑体（Noto Sans SC），seed、路径、tok/s 这类等宽内容用 JetBrains Mono。三者都是 OFL 开源字体，用 `@fontsource-variable/*` 的可变字重版打包进 `dist/`（共约 5MB）。思源黑体按 unicode-range 切成约 100 个小文件，浏览器只下载页面上用到的那几片。选型过程：在一个字体对比页里比较过 Inter / Geist / IBM Plex / 霞鹜文楷 / Maple Mono / 系统字体。
+- **离线**：不引用任何 CDN 或在线字体（字体文件都在 `dist/assets/` 里）；`app/web/dist/` 提交进 git，运行时不需要 Node。
+
+| 文件 | 内容 |
+|---|---|
+| `app/server.py` | 接口：`/api/checkpoints`、`/api/model`、`/api/generate`（SSE）、`/api/compare-models`、`/api/runs`、`/api/figures`、`/api/results`；托管 `dist/` |
+| `app/web/src/lib/api.ts` | 类型定义、fetch 封装、`streamGenerate()` 读 SSE |
+| `app/web/src/components/` | `Section`（编号区块）、`GlideNav`（侧栏目录）、`Segmented`（分段选择器）、`Composer`（输入框）、`SamplingPanel`、`ModelStats`、`OutputCard`、`PixelLoader` |
+| `app/web/src/sections/` | 五个区块：`GenerateSection`、`CompareSection`、`TrainingSections`（loss 曲线 / 对比图 / 结果表） |
+
+改前端：`conda env create -f app/web/environment.yml`（Node.js + pnpm），然后见 `app/web/README.md`。

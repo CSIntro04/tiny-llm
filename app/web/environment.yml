@@ -1,0 +1,8 @@
+# 前端开发 / 构建用的 conda 环境：Node.js + pnpm（只在改前端时需要；运行界面只要 tiny-llm 环境）。
+# 创建：conda env create -f app/web/environment.yml
+name: web
+channels:
+  - conda-forge
+dependencies:
+  - nodejs=22
+  - pnpm=10

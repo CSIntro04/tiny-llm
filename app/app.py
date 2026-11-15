@@ -6,77 +6,124 @@
 
 三个标签页：单模型生成 / 三模型对比 / 训练过程。
 界面只负责"调用"：加载模型和生成全部复用 src/sample.py 的 load_model / generate_text。
+外观：Soft 主题 + 下面的 CSS 常量；颜色全部用 Gradio 主题变量，深色模式自动适配。
 """
 
 from __future__ import annotations
 
 import argparse
-import functools
 import html
-import random
-import sys
 import time
-from pathlib import Path
 
 import gradio as gr
 import torch
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))  # 让 app/ 下的脚本能 import src/ 里的模块
+from common import (COMPARE_RUNS, DEFAULT_CKPT, FIGURES, RESULT_TABLES, ROOT, RUNS_DIR, get_model,
+                    list_checkpoints, list_runs, model_stats, preload, resolve_seed, run_curve)
+from eval_prompts import PROMPTS  # noqa: E402  （common 已把 src/ 加进 sys.path）
+from sample import generate_text  # noqa: E402
 
-from eval_prompts import PROMPTS  # noqa: E402
-from model import GPT  # noqa: E402
-from sample import Tokenizer, generate_text, load_model  # noqa: E402
+# 采样预设：名字 -> (temperature, top_k, top_p)。top_k=0 / top_p=1.0 表示不限
+PRESETS: dict[str, tuple[float, int, float]] = {
+    "Greedy": (0.0, 0, 1.0),
+    "保守": (0.5, 20, 1.0),
+    "默认": (0.8, 50, 1.0),
+    "创意": (1.2, 0, 0.95),
+}
 
-RUNS_DIR = ROOT / "runs"
-MAIN_RUNS = ["s100m", "s50m", "s10m", "s10m_char"]  # 下拉框里排在最前面
-COMPARE_RUNS = ["s10m", "s50m", "s100m"]
-DEFAULT_CKPT = "runs/s100m/ckpt_best.pt"
-FIGURES = ROOT / "docs/figures"
+
+# ---------------------------------------------------------------- 外观
+
+# 系统字体：答辩现场不联网，不用 Google Fonts
+FONT = ["Inter", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "sans-serif"]
+THEME = gr.themes.Soft(primary_hue="indigo", secondary_hue="cyan", neutral_hue="slate",
+                       font=FONT, radius_size="lg")
+
+CSS = """
+.gradio-container { max-width: 1280px !important; margin: 0 auto !important; }
+footer { display: none !important; }
+
+/* 头部横幅 */
+.hero { padding: 28px 32px; border-radius: 18px; color: #fff;
+        background: linear-gradient(120deg, #4338ca 0%, #6366f1 45%, #0891b2 100%);
+        box-shadow: 0 10px 30px -12px rgba(67, 56, 202, .55); }
+.hero h1 { margin: 0 0 6px; font-size: 30px; font-weight: 750; letter-spacing: -.01em; color: #fff; }
+.hero p { margin: 0 0 14px; opacity: .9; font-size: 15px; }
+.hero .chip { display: inline-block; margin: 0 6px 6px 0; padding: 3px 11px; border-radius: 999px;
+              font-size: 12.5px; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.28); }
+
+/* 指标卡 */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px; }
+.stat { padding: 12px 14px; border-radius: 12px; background: var(--background-fill-secondary);
+        border: 1px solid var(--border-color-primary); }
+.stat .k { font-size: 12px; color: var(--body-text-color-subdued); }
+.stat .v { font-size: 20px; font-weight: 700; margin-top: 2px; color: var(--body-text-color); }
+.stat .s { font-size: 11.5px; color: var(--body-text-color-subdued); }
+.ckpt-path { font-size: 12px; color: var(--body-text-color-subdued); margin-bottom: 8px;
+             font-family: ui-monospace, Menlo, Consolas, monospace; }
+
+/* 生成结果卡 */
+.gen-card { padding: 18px 20px; border-radius: 14px; min-height: 120px;
+            background: var(--block-background-fill); border: 1px solid var(--border-color-primary); }
+.gen-text { white-space: pre-wrap; font-size: 17px; line-height: 1.75; color: var(--body-text-color);
+            font-family: Georgia, "Noto Serif CJK SC", "Songti SC", serif; }
+.gen-prompt { background: var(--color-accent-soft); color: var(--color-accent); font-weight: 650;
+              padding: 1px 4px; border-radius: 5px; }
+.gen-empty { color: var(--body-text-color-subdued); font-size: 14px; text-align: center; padding-top: 38px; }
+.gen-meta { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 6px; }
+.pill { font-size: 12px; padding: 2px 10px; border-radius: 999px; color: var(--body-text-color-subdued);
+        background: var(--background-fill-secondary); border: 1px solid var(--border-color-primary); }
+
+/* 三模型对比列头 */
+.cmp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.cmp-name { font-size: 18px; font-weight: 700; }
+.badge { font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; color: #fff; }
+.tier-0 { background: #22d3ee; } .tier-1 { background: #6366f1; } .tier-2 { background: #4338ca; }
+
+/* 预设按钮、结果表 */
+.preset-row button { min-width: 0 !important; }
+.result-tables table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.result-tables th, .result-tables td { border: 1px solid var(--border-color-primary) !important; padding: 6px 10px; }
+.result-tables tr:nth-child(even) td { background: var(--background-fill-secondary); }
+.app-foot { text-align: center; font-size: 12.5px; color: var(--body-text-color-subdued); padding: 8px 0 4px; }
+"""
+
+HERO = """
+<div class="hero">
+  <h1>迷你语言模型 · Tiny LLM</h1>
+  <p>从零实现并训练的 Decoder-only Transformer —— 输入一段开头，看模型如何逐个 token 续写。</p>
+  <span class="chip">Decoder-only Transformer</span><span class="chip">BPE 词表 8192</span>
+  <span class="chip">上下文 512</span><span class="chip">SmolLM-Corpus + TinyStories</span>
+  <span class="chip">0.01B / 0.05B / 0.1B</span>
+</div>
+"""
+
+EMPTY_OUTPUT = '<div class="gen-card"><div class="gen-empty">输入 prompt，点击「生成」查看续写结果</div></div>'
 
 
 # ---------------------------------------------------------------- 模型
 
 
-def list_checkpoints(runs_dir: Path = RUNS_DIR) -> list[str]:
-    """扫描 runs/*/ckpt_*.pt，返回相对项目根目录的路径。正式 run 在前，smoke/overfit 在后。"""
-    def order(p: Path) -> tuple[int, str]:
-        run = p.parent.name
-        return (MAIN_RUNS.index(run) if run in MAIN_RUNS else len(MAIN_RUNS), str(p))
-    paths = sorted(runs_dir.glob("*/ckpt_*.pt"), key=order)
-    return [p.relative_to(ROOT).as_posix() for p in paths]
+def _stat(key: str, value: str, sub: str = "") -> str:
+    """一张指标卡：小标题 / 大数字 / 灰色注释。"""
+    sub_html = f'<div class="s">{html.escape(sub)}</div>' if sub else ""
+    return (f'<div class="stat"><div class="k">{html.escape(key)}</div>'
+            f'<div class="v">{html.escape(value)}</div>{sub_html}</div>')
 
 
-@functools.lru_cache(maxsize=4)
-def get_model(ckpt_path: str) -> tuple[GPT, Tokenizer, dict]:
-    """加载并缓存模型。参数是字符串（可哈希），同一个 checkpoint 只加载一次。"""
-    p = ROOT / ckpt_path
-    return load_model(str(p.parent), p.name)
-
-
-@functools.lru_cache(maxsize=32)
-def ckpt_meta(ckpt_path: str) -> dict:
-    """读 checkpoint 里的训练步数和 best_val。mmap=True：不把整个文件（含优化器状态）读进内存。"""
-    state = torch.load(ROOT / ckpt_path, map_location="cpu", mmap=True, weights_only=False)
-    return {"iter": state["iter"], "best_val": state["best_val"]}
-
-
-def model_info(ckpt_path: str) -> str:
-    """模型结构、参数量、已训练 token 数、best val loss（Markdown）。"""
+def model_cards(ckpt_path: str) -> str:
+    """模型结构、参数量、已训练 token 数、best val loss，渲染成一排指标卡（HTML）。"""
     if not ckpt_path:
-        return "没有选择 checkpoint"
-    model, tok, cfg = get_model(ckpt_path)
-    meta = ckpt_meta(ckpt_path)
-    c, tc = model.cfg, cfg["train"]
-    tokens = meta["iter"] * tc["batch_size"] * tc["grad_accum"] * c.block_size
-    return (
-        f"**{ckpt_path}**\n\n"
-        f"| 结构（层/维/头） | 总参数 | 非 embedding | 分词器（词表） | 上下文 | 已训练 | best val loss |\n"
-        f"|---|---|---|---|---|---|---|\n"
-        f"| {c.n_layer} / {c.n_embd} / {c.n_head} | {model.num_params(False) / 1e6:.2f}M "
-        f"| {model.num_params(True) / 1e6:.2f}M | {type(tok).__name__}（{tok.vocab_size}） | {c.block_size} "
-        f"| {meta['iter']} 步 / {tokens / 1e6:.0f}M token | {meta['best_val']:.3f} |"
-    )
+        return '<div class="ckpt-path">没有选择 checkpoint</div>'
+    m = model_stats(ckpt_path)
+    cards = [
+        _stat("结构", f"{m['n_layer']}/{m['n_embd']}/{m['n_head']}", "层 / 维 / 头"),
+        _stat("总参数", f"{m['params'] / 1e6:.1f}M", f"非 emb {m['params_non_emb'] / 1e6:.1f}M"),
+        _stat("分词器", f"{m['vocab_size']}", m["tokenizer"]),
+        _stat("已训练", f"{m['tokens'] / 1e6:.0f}M", f"token · {m['iters']} 步"),
+        _stat("best val loss", f"{m['best_val']:.3f}", f"上下文 {m['block_size']}"),
+    ]
+    return f'<div class="ckpt-path">{html.escape(ckpt_path)}</div><div class="stats">{"".join(cards)}</div>'
 
 
 # ---------------------------------------------------------------- 生成
@@ -97,66 +144,50 @@ def _run(ckpt: str, prompt: str, max_new_tokens: int, temperature: float,
     return text, len(tok.encode(text)), time.time() - t0
 
 
-def _render(prompt: str, text: str, note: str) -> str:
-    """prompt 加粗、续写正常显示；都做 HTML 转义，保留换行。"""
-    return (f'<div style="white-space: pre-wrap; line-height: 1.6; font-size: 15px">'
-            f'<b style="color: #2563eb">{html.escape(prompt)}</b>{html.escape(text)}</div>'
-            f'<p style="color: gray; font-size: 12px">{html.escape(note)}</p>')
-
-
-def _resolve_seed(seed: float) -> int:
-    """seed = -1 时随机取一个，并显示出来，方便复现这次结果。"""
-    return random.randint(0, 2**31 - 1) if int(seed) == -1 else int(seed)
+def _render(prompt: str, text: str, notes: list[str]) -> str:
+    """输出卡：prompt 高亮、续写正常显示，底部一排灰色胶囊。全部 HTML 转义，保留换行。"""
+    pills = "".join(f'<span class="pill">{html.escape(n)}</span>' for n in notes)
+    return (f'<div class="gen-card"><div class="gen-text"><span class="gen-prompt">{html.escape(prompt)}</span>'
+            f'{html.escape(text)}</div><div class="gen-meta">{pills}</div></div>')
 
 
 def generate_single(ckpt: str, prompt: str, max_new_tokens: int, temperature: float,
                     top_k: int, top_p: float, seed: float) -> str:
-    seed = _resolve_seed(seed)
+    seed = resolve_seed(seed)
     text, n, dt = _run(ckpt, prompt, max_new_tokens, temperature, top_k, top_p, seed)
-    return _render(prompt, text, f"seed={seed} · 生成 {n} 个 token · {dt:.2f}s · {n / max(dt, 1e-6):.0f} tok/s")
+    return _render(prompt, text, [f"seed {seed}", f"{n} token", f"{dt:.2f} s", f"{n / max(dt, 1e-6):.0f} tok/s"])
 
 
 def generate_compare(prompt: str, max_new_tokens: int, temperature: float,
                      top_k: int, top_p: float, seed: float) -> tuple[str, str, str]:
     """同一 prompt、同一组参数、同一 seed，依次跑三个规模的模型。"""
-    seed = _resolve_seed(seed)
+    seed = resolve_seed(seed)
     outs = []
     for run in COMPARE_RUNS:
         ckpt = f"runs/{run}/ckpt_best.pt"
         if not (ROOT / ckpt).exists():
-            outs.append(f"<p>找不到 {ckpt}</p>")
+            outs.append(f'<div class="gen-card"><div class="gen-empty">找不到 {html.escape(ckpt)}</div></div>')
             continue
         text, n, dt = _run(ckpt, prompt, max_new_tokens, temperature, top_k, top_p, seed)
-        outs.append(_render(prompt, text, f"seed={seed} · {n} token · {dt:.2f}s"))
+        outs.append(_render(prompt, text, [f"seed {seed}", f"{n} token", f"{dt:.2f} s"]))
     return outs[0], outs[1], outs[2]
 
 
-def _compare_title(run: str) -> str:
+def _compare_head(run: str, tier: int) -> str:
+    """对比列的列头：模型名 + 参数量徽章（颜色由浅到深对应 0.01B → 0.1B）。"""
     ckpt = f"runs/{run}/ckpt_best.pt"
-    if not (ROOT / ckpt).exists():
-        return f"### {run}"
-    return f"### {run}（{get_model(ckpt)[0].num_params(False) / 1e6:.1f}M 参数）"
+    size = f"{get_model(ckpt)[0].num_params(False) / 1e6:.1f}M 参数" if (ROOT / ckpt).exists() else "缺失"
+    return (f'<div class="cmp-head"><span class="cmp-name">{html.escape(run)}</span>'
+            f'<span class="badge tier-{tier}">{size}</span></div>')
 
 
 # ---------------------------------------------------------------- 训练过程
 
 
-def list_runs() -> list[str]:
-    return [p.parent.name for p in sorted(RUNS_DIR.glob("*/log.csv"))
-            if (p.parent / "loss_curve.png").exists()]
-
-
-def run_curve(run: str) -> str | None:
-    p = RUNS_DIR / run / "loss_curve.png"
-    return str(p) if p.exists() else None
-
-
 def results_tables() -> str:
     """docs/figures/ 下已有的结果表，拼成一段 Markdown。"""
     parts = []
-    for name, title in [("results.md", "最终结果（实验 A）"),
-                        ("ckpt_eval.md", "相同已训练 token 数下的 val loss"),
-                        ("bpb.md", "字符级 vs BPE（bits-per-byte，实验 C）")]:
+    for name, title in RESULT_TABLES:
         p = FIGURES / name
         if p.exists():
             parts.append(f"### {title}\n\n{p.read_text(encoding='utf-8')}")
@@ -167,15 +198,75 @@ def results_tables() -> str:
 
 
 def _sampling_controls() -> list[gr.components.Component]:
-    """长度、temperature、top-k、top-p、seed 五个控件（两个标签页各建一套）。"""
-    with gr.Row():
-        n = gr.Slider(10, 500, value=200, step=10, label="max_new_tokens（生成长度）")
-        t = gr.Slider(0.0, 2.0, value=0.8, step=0.05, label="temperature（0 = greedy）")
-    with gr.Row():
-        k = gr.Slider(0, 200, value=50, step=1, label="top_k（0 = 不限）")
-        p = gr.Slider(0.1, 1.0, value=1.0, step=0.05, label="top_p（1.0 = 不限）")
-        s = gr.Number(value=42, precision=0, label="seed（-1 = 随机）")
+    """预设按钮 + 长度、temperature、top-k、top-p、seed 五个控件（两个标签页各建一套）。"""
+    with gr.Row(elem_classes="preset-row"):
+        buttons = {name: gr.Button(name, size="sm", variant="secondary") for name in PRESETS}
+    n = gr.Slider(10, 500, value=200, step=10, label="生成长度", info="max_new_tokens")
+    t = gr.Slider(0.0, 2.0, value=0.8, step=0.05, label="temperature", info="越大越随机；0 = greedy")
+    k = gr.Slider(0, 200, value=50, step=1, label="top-k", info="只在概率最高的 k 个里采样；0 = 不限")
+    p = gr.Slider(0.1, 1.0, value=1.0, step=0.05, label="top-p", info="累计概率截断；1.0 = 不限")
+    s = gr.Number(value=42, precision=0, label="seed", info="-1 = 随机（结果里会显示实际 seed）")
+    for name, btn in buttons.items():
+        btn.click(lambda v=PRESETS[name]: v, None, [t, k, p])  # 默认参数绑定当前预设，避免闭包晚绑定
     return [n, t, k, p, s]
+
+
+def _tab_single(ckpts: list[str], default: str | None, examples: list[str]) -> None:
+    with gr.Row(equal_height=False):
+        with gr.Column(scale=1, min_width=300, variant="panel"):
+            with gr.Row(equal_height=True):
+                ckpt = gr.Dropdown(ckpts, value=default, label="checkpoint", scale=5)
+                refresh = gr.Button("🔄", size="sm", scale=0, min_width=44)
+            gr.Markdown("**采样预设**")
+            controls = _sampling_controls()
+        with gr.Column(scale=2, min_width=420):
+            info = gr.HTML(model_cards(default) if default else "")
+            prompt = gr.Textbox(value="Once upon a time", label="prompt", lines=3,
+                                placeholder="输入英文开头，例如 Once upon a time")
+            gr.Examples(examples, inputs=prompt, label="示例 prompt（故事 3 个 + 说明文 3 个）")
+            with gr.Row():
+                btn = gr.Button("✨ 生成", variant="primary", size="lg", scale=4)
+                clear = gr.Button("清空", variant="secondary", size="lg", scale=1)
+            out = gr.HTML(EMPTY_OUTPUT)
+
+    ckpt.change(model_cards, ckpt, info)
+    refresh.click(lambda: gr.Dropdown(choices=list_checkpoints()), None, ckpt)
+    btn.click(generate_single, [ckpt, prompt, *controls], out)
+    prompt.submit(generate_single, [ckpt, prompt, *controls], out)
+    clear.click(lambda: EMPTY_OUTPUT, None, out)
+
+
+def _tab_compare(examples: list[str]) -> None:
+    gr.Markdown("同一个 prompt、同一组采样参数、同一个 seed，比较 **0.01B / 0.05B / 0.1B** 三个规模。")
+    with gr.Row(equal_height=True):
+        prompt = gr.Textbox(value="Once upon a time", label="prompt", lines=1, scale=5)
+        btn = gr.Button("✨ 三个模型一起生成", variant="primary", size="lg", scale=2)
+    gr.Examples(examples, inputs=prompt, label="示例 prompt")
+    with gr.Accordion("采样参数", open=False):
+        controls = _sampling_controls()
+    cols = []
+    with gr.Row(equal_height=False):
+        for i, run in enumerate(COMPARE_RUNS):
+            with gr.Column(min_width=260):
+                gr.HTML(_compare_head(run, i))
+                cols.append(gr.HTML(EMPTY_OUTPUT))
+    btn.click(generate_compare, [prompt, *controls], cols)
+    prompt.submit(generate_compare, [prompt, *controls], cols)
+
+
+def _tab_training() -> None:
+    runs = list_runs()
+    with gr.Column(variant="panel"):
+        run = gr.Dropdown(runs, value="s100m" if "s100m" in runs else (runs[0] if runs else None),
+                          label="run")
+        curve = gr.Image(run_curve(run.value) if run.value else None,
+                         label="loss 曲线（左：step，右：token）", show_label=True)
+    run.change(run_curve, run, curve)
+    with gr.Accordion("对比图（docs/figures/）", open=True):
+        gr.Gallery([str(p) for p in sorted(FIGURES.glob("*.png")) if not p.name.startswith("app_")],
+                   columns=3, height="auto", show_label=False)
+    with gr.Accordion("结果表", open=True):
+        gr.Markdown(results_tables(), elem_classes="result-tables")
 
 
 def build_ui() -> gr.Blocks:
@@ -184,62 +275,15 @@ def build_ui() -> gr.Blocks:
     examples = PROMPTS["story"][:3] + PROMPTS["expository"][:3]
 
     with gr.Blocks(title="Tiny LLM") as demo:
-        gr.Markdown("# 迷你语言模型：从零训练的 Decoder-only Transformer\n"
-                    "SmolLM-Corpus 子集 + TinyStories 训练，BPE 词表 8192，上下文 512。")
-
-        with gr.Tab("单模型生成"):
-            with gr.Row():
-                ckpt = gr.Dropdown(ckpts, value=default, label="checkpoint", scale=5)
-                refresh = gr.Button("刷新列表", scale=1)
-            info = gr.Markdown(model_info(default) if default else "")
-            prompt = gr.Textbox(value="Once upon a time", label="prompt", lines=2)
-            controls = _sampling_controls()
-            btn = gr.Button("生成", variant="primary")
-            out = gr.HTML(label="续写")
-            gr.Examples(examples, inputs=prompt, label="示例 prompt（故事 3 个 + 说明文 3 个）")
-
-            ckpt.change(model_info, ckpt, info)
-            refresh.click(lambda: gr.Dropdown(choices=list_checkpoints()), None, ckpt)
-            btn.click(generate_single, [ckpt, prompt, *controls], out)
-
-        with gr.Tab("三模型对比"):
-            gr.Markdown("同一个 prompt、同一组采样参数、同一个 seed，比较 0.01B / 0.05B / 0.1B。")
-            prompt2 = gr.Textbox(value="Once upon a time", label="prompt", lines=2)
-            controls2 = _sampling_controls()
-            btn2 = gr.Button("三个模型一起生成", variant="primary")
-            cols = []
-            with gr.Row():
-                for run in COMPARE_RUNS:
-                    with gr.Column():
-                        gr.Markdown(_compare_title(run))
-                        cols.append(gr.HTML())
-            gr.Examples(examples, inputs=prompt2)
-            btn2.click(generate_compare, [prompt2, *controls2], cols)
-
-        with gr.Tab("训练过程"):
-            runs = list_runs()
-            run = gr.Dropdown(runs, value="s100m" if "s100m" in runs else (runs[0] if runs else None),
-                              label="run")
-            curve = gr.Image(run_curve(run.value) if run.value else None, label="loss 曲线（左：step，右：token）")
-            run.change(run_curve, run, curve)
-            gr.Markdown("### 对比图（`docs/figures/`）")
-            gr.Gallery([str(p) for p in sorted(FIGURES.glob("*.png"))], columns=3, height="auto")
-            gr.Markdown(results_tables())
+        gr.HTML(HERO)
+        with gr.Tab("💬 单模型生成"):
+            _tab_single(ckpts, default, examples)
+        with gr.Tab("⚖️ 三模型对比"):
+            _tab_compare(examples)
+        with gr.Tab("📈 训练过程"):
+            _tab_training()
+        gr.HTML('<div class="app-foot">上海交通大学 计算机科学导论 · B03 从零训练一个迷你语言模型</div>')
     return demo
-
-
-def preload(mode: str) -> None:
-    """启动时预加载模型，第一次点"生成"不用等。default 只加载默认模型；all 加载三模型对比用到的全部。"""
-    wanted = {"none": [], "default": [DEFAULT_CKPT],
-              "all": [DEFAULT_CKPT] + [f"runs/{r}/ckpt_best.pt" for r in COMPARE_RUNS]}[mode]
-    available = list_checkpoints()
-    for ckpt in dict.fromkeys(wanted):  # 去重并保持顺序
-        if ckpt in available:
-            t0 = time.time()
-            get_model(ckpt)
-            print(f"预加载 {ckpt}（{time.time() - t0:.1f}s）")
-        else:
-            print(f"跳过 {ckpt}：文件不存在")
 
 
 if __name__ == "__main__":
@@ -250,5 +294,6 @@ if __name__ == "__main__":
     preload(args.preload)
     # Gradio 默认只允许返回"当前工作目录 / 系统临时目录"里的文件；从 app/ 等其他目录启动时，
     # runs/*/loss_curve.png 会被拒绝（InvalidPathError）。显式放行这两个只读的图片目录。
-    build_ui().launch(server_name="127.0.0.1", server_port=args.port,
+    # Gradio 6 起 theme / css 在 launch() 上传，不在 gr.Blocks() 上。
+    build_ui().launch(server_name="127.0.0.1", server_port=args.port, theme=THEME, css=CSS,
                       allowed_paths=[str(RUNS_DIR), str(FIGURES)])

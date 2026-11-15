@@ -5,7 +5,7 @@
         --max_new_tokens 200 --temperature 0.8 --top_k 50 --top_p 0.95 \
         --num_samples 3 --seed 42 [--ckpt ckpt_tok300M.pt]
 
-load_model / generate_text 也给 app/app.py（Gradio 界面）直接调用。
+load_model / generate_text 也给 app/app.py（Gradio 界面）直接调用；generate_stream 给 app/server.py（网页界面）流式输出用。
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ import argparse
 import json
 import sys
 import time
+from collections.abc import Iterator
 from pathlib import Path
 
 import torch
@@ -148,6 +149,41 @@ def generate_text(model: GPT, tok: Tokenizer, prompt: str, num_samples: int = 1,
             row = row[: row.index(tok.eot_id)]
         texts.append(tok.decode(row))
     return texts
+
+
+@torch.no_grad()
+def generate_stream(model: GPT, tok: Tokenizer, prompt: str, max_new_tokens: int = 200,
+                    temperature: float = 0.8, top_k: int | None = 50, top_p: float | None = None,
+                    seed: int | None = None) -> Iterator[str]:
+    """流式生成（给网页界面用）：每生成一个 token 就 yield 新增的那段文本。
+
+    循环和 generate() 一样（B=1），随机数调用顺序也一样，所以同一个 seed 的结果与 generate_text() 相同。
+    增量解码：每步把"全部新 token"重新 decode，再减去上次的文本。不能只 decode 单个 token，
+    因为 BPE 是按字节合并的，一个汉字 / emoji 可能被拆在两个 token 里，单独解码会出现乱码。
+    """
+    if seed is not None:
+        set_seed(seed)
+    device = next(model.parameters()).device
+    idx = torch.tensor([tok.encode(prompt) if prompt else [tok.eot_id]], dtype=torch.long, device=device)
+    new_ids: list[int] = []
+    sent = ""  # 已经发给前端的文本
+    for _ in range(max_new_tokens):
+        idx_cond = idx[:, -model.cfg.block_size:]  # (1, ≤block_size)
+        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=idx.is_cuda):
+            logits, _ = model(idx_cond)  # (1, 1, V)
+        next_id = sample_next(logits[:, -1, :].float(), temperature, top_k, top_p)  # (1, 1)
+        if next_id.item() == tok.eot_id:  # 文档结束符：停止，不输出它
+            break
+        idx = torch.cat([idx, next_id], dim=1)  # (1, T+1)
+        new_ids.append(int(next_id.item()))
+        text = tok.decode(new_ids)
+        if text.endswith("�"):  # 末尾是半个多字节字符，等下一个 token 补齐再发
+            continue
+        yield text[len(sent):]
+        sent = text
+    text = tok.decode(new_ids)
+    if len(text) > len(sent):  # 最后剩下没发出去的部分（比如被截断的半个字符）
+        yield text[len(sent):]
 
 
 # ---------------------------------------------------------------- 命令行

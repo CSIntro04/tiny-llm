@@ -35,11 +35,11 @@
 3. 启动界面（这个终端不要关）：
 
    ```bash
-   python app/app.py --preload all    # 三个模型启动时就加载好，约 5 秒
+   python app/server.py --preload all    # 网页界面（React + shadcn/ui），三个模型启动时就加载好，约 5 秒
    ```
 
 4. 在 Windows 的浏览器打开 `http://127.0.0.1:7860`（WSL2 会自动转发端口）。浏览器缩放 125%。
-5. **热身**：在"三模型对比"页点一次"生成"（第一次调用有 CUDA 初始化开销），确认三栏都有输出。
+5. **热身**：在"02 三模型对比"区块点一次"三个一起生成"（第一次调用有 CUDA 初始化开销），确认三栏都有输出。文字是逐 token 流式出现的，结果与一次性生成完全相同。
 6. 再开一个终端标签页，`cd ~/Codes/tiny-llm && conda activate tiny-llm`，留着给兜底命令用；VS Code 打开 `src/model.py` 并跳到第 66 行，留着讲代码。
 
 ## 三、演示脚本（2 分钟）
@@ -72,7 +72,7 @@
 
 ### 第 2 步：调 temperature（约 50 秒）
 
-切到"单模型生成"页，checkpoint 选 `runs/s100m/ckpt_best.pt`，prompt `Photosynthesis is the process`，max_new_tokens 150，seed 42。依次改 temperature 和 top-k，每次点"生成"（每次不到 1 秒）：
+点侧栏目录的"01 单模型生成"，checkpoint 选 `runs/s100m/ckpt_best.pt`，prompt `Photosynthesis is the process`，max_new_tokens 150，seed 42。依次改 temperature 和 top-k，每次点"生成"（每次不到 1 秒）：
 
 | 设置 | 预期 | 讲 |
 |---|---|---|
@@ -83,15 +83,16 @@
 
 ### 第 3 步：训练过程（约 20 秒）
 
-切到"训练过程"页，选 s100m，展示 loss 曲线和结果表。讲："从 9.2（≈ ln 8192，随机猜）降到 2.4；train 和 val 两条线几乎重合，没有过拟合。"然后切回 PPT 讲实验结论。
+点侧栏目录的"03 Loss 曲线"，选 s100m，展示 loss 曲线，再往下滚到结果表。讲："从 9.2（≈ ln 8192，随机猜）降到 2.4；train 和 val 两条线几乎重合，没有过拟合。"然后切回 PPT 讲实验结论。
 
 ## 四、兜底方案（逐级降级）
 
 | 现象 | 处理 | 用时 |
 |---|---|---|
-| 浏览器页面卡住、按钮没反应 | 刷新页面（模型已经在显存里，不用重新加载）。还不行就在终端 Ctrl+C，重新 `python app/app.py --preload all` | 10 秒 |
-| 界面打不开 / Gradio 报错 | 在备用终端直接用命令行生成（见下面的命令），终端字体调大 | 立即 |
-| CUDA 报错、显卡驱动异常 | 改用 CPU：`CUDA_VISIBLE_DEVICES= python app/app.py --preload all`（`load_model` 没有 GPU 时自动用 CPU）。CPU 实测：s10m 142、s50m 46、s100m 25 tok/s，把 max_new_tokens 调到 100，三模型对比约 7 秒 | 30 秒 |
+| 浏览器页面卡住、按钮没反应 | 刷新页面（模型已经在显存里，不用重新加载）。还不行就在终端 Ctrl+C，重新 `python app/server.py --preload all` | 10 秒 |
+| 网页界面打不开 / 白屏 | Ctrl+C 后改用 Gradio 备用界面：`python app/app.py --preload all`（同样的功能分成三个标签页，同样端口 7860） | 15 秒 |
+| 两个界面都打不开 | 在备用终端直接用命令行生成（见下面的命令），终端字体调大 | 立即 |
+| CUDA 报错、显卡驱动异常 | 改用 CPU：`CUDA_VISIBLE_DEVICES= python app/server.py --preload all`（`load_model` 没有 GPU 时自动用 CPU）。CPU 实测：s10m 142、s50m 46、s100m 25 tok/s，把 max_new_tokens 调到 100，三模型对比约 7 秒 | 30 秒 |
 | 演示机无法使用 | 用教室电脑放 PPT，播放提前录好的演示视频；PPT 第 7–10 页已经有全部样例 | 立即 |
 
 命令行兜底（复制粘贴即可，结果与界面相同）：

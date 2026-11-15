@@ -1,11 +1,11 @@
 # tiny-llm：从零训练迷你语言模型（B03）
 
-上海交通大学 Fall 2026 计算机科学导论小组项目。我们**手写** Decoder-only Transformer（`src/model.py`，不依赖 HuggingFace 模型类），在 SmolLM-Corpus 1B 子集 + TinyStories 混合语料（16.3 亿 token，自训练 BPE-8192 词表）上，用 next-token prediction 分别训练了 **0.01B / 0.05B / 0.1B** 三个规模的模型，并做了模型规模、采样参数、分词方式三组对比实验和一个 Gradio 交互界面。
+上海交通大学 Fall 2026 计算机科学导论小组项目。我们**手写** Decoder-only Transformer（`src/model.py`，不依赖 HuggingFace 模型类），在 SmolLM-Corpus 1B 子集 + TinyStories 混合语料（16.3 亿 token，自训练 BPE-8192 词表）上，用 next-token prediction 分别训练了 **0.01B / 0.05B / 0.1B** 三个规模的模型，并做了模型规模、采样参数、分词方式三组对比实验和一个网页交互界面（另有 Gradio 备用版）。
 
 ![界面截图](docs/figures/app_compare.png)
 
-<!-- 截图说明：运行 python app/app.py --preload all，在“三模型对比”页输入 Once upon a time、默认参数点生成，
-     截整页保存为 docs/figures/app_compare.png；再在“单模型生成”页截一张存为 docs/figures/app_single.png -->
+<!-- 截图说明：运行 python app/server.py --preload all，在“02 三模型对比”区块输入 Once upon a time、默认参数点生成，
+     截整页保存为 docs/figures/app_compare.png；再在“01 单模型生成”区块截一张存为 docs/figures/app_single.png -->
 
 同一个 prompt、同样的采样参数（T=0.8，top-k=50，seed=42）下三个模型的续写：
 
@@ -17,6 +17,30 @@
 三个模型都能写出通顺的儿童故事；说明文要到 0.1B 才开始"像样"，但事实仍然经常是编的。
 
 ---
+
+## 快速运行 demo
+
+不训练、只想打开界面看效果，三步：
+
+```bash
+# 1. 建环境（只需一次；镜像配置见第 1 节）
+conda env create -f environment.yml
+conda activate tiny-llm
+
+# 2. 下载训练好的模型（只需一次）：从第 4 节的交大云盘链接下载 tiny-llm-weights.tar，放到项目根目录后
+tar xf tiny-llm-weights.tar -C runs/      # 得到 runs/{s10m,s50m,s100m}/ckpt_best.pt
+
+# 3. 启动界面（在项目根目录运行）
+python app/server.py --preload all
+```
+
+然后在浏览器打开 <http://127.0.0.1:7860>（WSL2 里启动的话，直接用 Windows 的浏览器打开这个地址即可）。
+
+- 不需要 Node.js / pnpm：前端已经构建好放在 `app/web/dist/`，字体也打包在里面，**断网也能用**。
+- 没有 GPU 也能跑（自动用 CPU，s100m 约 25 tok/s）。
+- 想先确认一切正常：`python src/demo_check.py`（检查 GPU、三个 checkpoint、生成结果是否与记录一致）。
+- 网页打不开时的备用界面：`python app/app.py --preload all`（Gradio 版，功能相同，没有流式输出）。
+- 页面里有什么、怎么用，见第 6 节；答辩现场的演示流程见 `docs/demo.md`。
 
 ## 1. 环境
 
@@ -110,15 +134,21 @@ python src/sample.py --run runs/s100m --ckpt ckpt_tok300M.pt --prompt "Once upon
 ## 6. 交互界面
 
 ```bash
-python app/app.py                  # 浏览器打开 http://127.0.0.1:7860
-python app/app.py --preload all    # 启动时就加载三个正式模型（答辩演示用），约 0.74GB 显存
+python app/server.py                 # 网页界面，浏览器打开 http://127.0.0.1:7860
+python app/server.py --preload all   # 启动时就加载三个正式模型（答辩演示用），约 0.74GB 显存
+python app/server.py --port 8000     # 换端口
+python app/app.py --preload all      # 备用：Gradio 版界面，功能相同（没有流式输出）
 ```
 
-三个标签页：
+架构：`app/server.py`（FastAPI 后端，生成复用 `src/sample.py`）+ `app/web/`（React + shadcn/ui 前端）。生成结果通过 SSE 流式返回，文字逐 token 出现；同一 seed 下与 `src/sample.py` 命令行的结果完全一致。
 
-- **单模型生成**：选 checkpoint（包括训练中途的 `ckpt_tok*.pt`），调生成长度、temperature、top-k、top-p、seed。
-- **三模型对比**：同一 prompt、同一组参数，三个规模的模型并排输出。
-- **训练过程**：各 run 的 loss 曲线和最终结果表。
+页面是一个长页，左侧目录可跳转到五个区块：
+
+- **01 单模型生成**：选 checkpoint（包括训练中途的 `ckpt_tok*.pt`），用预设或滑块调生成长度、temperature、top-k、top-p、seed；Enter 生成，生成中可以停止。
+- **02 三模型对比**：同一 prompt、同一组参数、同一 seed，0.01B / 0.05B / 0.1B 依次流式输出。
+- **03 Loss 曲线**、**04 对比图**、**05 结果表**：各 run 的训练曲线、`docs/figures/` 里的实验图和结果表。
+
+运行界面只需要 `tiny-llm` 环境：前端构建产物 `app/web/dist/` 已提交，`node_modules/` 不提交。修改前端需要 Node.js + pnpm（`conda env create -f app/web/environment.yml`），步骤见 `app/web/README.md`。
 
 ## 7. 结果摘要
 
@@ -149,7 +179,7 @@ python src/model.py  # 打印四档配置的参数量（按组件拆分）
 configs/      实验配置（debug / s10m / s50m / s100m / s10m_char）
 src/          tokenizer.py  prepare.py  model.py  train.py  sample.py  utils.py
               evaluate.py  eval_prompts.py  plot_compare.py  score_blind.py  export.py  demo_check.py  check_env.py
-app/app.py    Gradio 界面
+app/          server.py（FastAPI 后端）  web/（React + shadcn/ui 前端）  app.py（Gradio 备用界面）  common.py
 tests/        pytest 测试
 data/         raw/（下载的 parquet，不进 git）  processed/（bin 不进 git；meta.json、tokenizer.json 进 git）
 runs/         每次训练的输出（checkpoint 不进 git）
