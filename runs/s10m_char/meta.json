@@ -1,0 +1,179 @@
+{
+  "tokenizer": "char",
+  "tokenizer_file": "char_vocab.json",
+  "vocab_size": 336,
+  "eot_id": 0,
+  "dtype": "uint16",
+  "shards": "1",
+  "val_frac": 0.005,
+  "seed": 1337,
+  "tok_train_chars": 400000000,
+  "sources": {
+    "smollm": {
+      "repo": "ecreeth/1b-smollm-corpus",
+      "files": [
+        {
+          "file": "train-00000-of-00009.parquet",
+          "bytes": 308355479,
+          "sha256": "1717c4df0be91a0ad0140e86cd335a6258963f36052786df070767d572836141"
+        }
+      ],
+      "train_tokens": 515593647,
+      "val_tokens": 2407409,
+      "train_docs": 115533,
+      "val_docs": 581,
+      "dropped": {
+        "train": {
+          "non_ascii": 97,
+          "mojibake": 368,
+          "too_short": 15
+        },
+        "val": {}
+      },
+      "chars_per_token": 1.0
+    },
+    "tinystories": {
+      "repo": "roneneldan/TinyStories",
+      "files": [
+        {
+          "file": "data/train-00000-of-00004-2d5a1467fff1081b.parquet",
+          "bytes": 248731111,
+          "sha256": "77cf780cebe52b6e83e3a2ac84bc56d8059363113e41d17a023f1d8b2ed0fc0b"
+        },
+        {
+          "file": "data/validation-00000-of-00001-869c898b519ad725.parquet",
+          "bytes": 9989127,
+          "sha256": "33406a6206554cfc279c29c11f4df51528af487aa1a602b075566fc83c49dcab"
+        }
+      ],
+      "train_tokens": 477174540,
+      "val_tokens": 19195203,
+      "train_docs": 529732,
+      "val_docs": 21983,
+      "dropped": {
+        "train": {
+          "non_ascii": 34,
+          "mojibake": 109,
+          "empty": 55
+        },
+        "val": {
+          "mojibake": 4,
+          "non_ascii": 3
+        }
+      },
+      "chars_per_token": 1.0
+    }
+  },
+  "mix_weights": {
+    "smollm": 0.5193,
+    "tinystories": 0.4807
+  },
+  "examples": {
+    "Once upon a time": [
+      "O",
+      "n",
+      "c",
+      "e",
+      " ",
+      "u",
+      "p",
+      "o",
+      "n",
+      " ",
+      "a",
+      " ",
+      "t",
+      "i",
+      "m",
+      "e"
+    ],
+    "Photosynthesis converts light energy into chemical energy stored in glucose.": [
+      "P",
+      "h",
+      "o",
+      "t",
+      "o",
+      "s",
+      "y",
+      "n",
+      "t",
+      "h",
+      "e",
+      "s",
+      "i",
+      "s",
+      " ",
+      "c",
+      "o",
+      "n",
+      "v",
+      "e",
+      "r",
+      "t",
+      "s",
+      " ",
+      "l",
+      "i",
+      "g",
+      "h",
+      "t",
+      " ",
+      "e",
+      "n",
+      "e",
+      "r",
+      "g",
+      "y",
+      " ",
+      "i",
+      "n",
+      "t",
+      "o",
+      " ",
+      "c",
+      "h",
+      "e",
+      "m",
+      "i",
+      "c",
+      "a",
+      "l",
+      " ",
+      "e",
+      "n",
+      "e",
+      "r",
+      "g",
+      "y",
+      " ",
+      "s",
+      "t",
+      "o",
+      "r",
+      "e",
+      "d",
+      " ",
+      "i",
+      "n",
+      " ",
+      "g",
+      "l",
+      "u",
+      "c",
+      "o",
+      "s",
+      "e",
+      "."
+    ]
+  },
+  "samples": {
+    "smollm": [
+      "In the recent developments in the medical field the fact that vitamin b12 deficiency can cause ageing at an early stage is been proved by the expert researchers at sublingualb12report.com/. People always knew about the lesser known facts and symptoms of the vitamin b12 deficiency up till now. –\nSymp",
+      "Sample Content Preview\nBoost Your Memory, Focus and Performance by Better Understanding Your Brain\nPsychology is a fascinating subject for anyone who wants to learn more about themselves, about the way the world works and about how to have successful interactions with other people. Psychology is fas"
+    ],
+    "tinystories": [
+      "Jill and Tom were twins who liked to play with their toys. They had many toys, but their favorite was a big red automobile that they could push and ride. They liked to pretend they were driving to different places, like the park, the zoo, or the store.\n\nOne day, it was very hot outside. The sun was ",
+      "Once upon a time, there was a little girl named Lily. She loved the color pink and wished for a pink dress. One day, she saw a butterfly with pink wings and decided to follow it. The butterfly led her to a beautiful garden.\n\nIn the garden, Lily saw many flowers of different colors. She wanted to pic"
+    ]
+  }
+}

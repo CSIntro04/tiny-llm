@@ -6,7 +6,7 @@
 |---|---|---|
 | A | 模型规模 0.01B / 0.05B / 0.1B | ✅ 自动指标完成；人工盲评**待组员打分** |
 | B | 采样参数（temperature × top-k，greedy，top-p） | ✅ |
-| C | 分词方式（字符级 vs BPE） | ⏳ 数据和配置已备好，冒烟通过，**正式训练待确认**（本地约 15 分钟） |
+| C | 分词方式（字符级 vs BPE） | ✅ |
 
 ---
 
@@ -161,7 +161,7 @@
 
 ---
 
-## 实验 C：字符级 vs BPE（进行中）
+## 实验 C：字符级 vs BPE
 
 ### 设置
 
@@ -176,13 +176,37 @@
 | 其余 | 相同（lr 1e-3、2290 步、有效 batch 131072、seed 1337） | 相同 |
 | 训练环境 | 云端 RTX 5090 | 本地 RTX 5060 Ti（64 × 4） |
 
-数据：`python src/prepare.py --tokenizer char --shards 1 --out_dir data/processed_char`（已完成）。配置：`configs/s10m_char.yaml`。冒烟测试（50 步）通过：初始 loss 5.81 ≈ ln(336)；本地吞吐 340k tok/s，显存 3.2GB；完整训练约 15 分钟。
+数据：`python src/prepare.py --tokenizer char --shards 1 --out_dir data/processed_char`。配置：`configs/s10m_char.yaml`。2026-11-15 在本地 RTX 5060 Ti 上训练：初始 loss 5.81 ≈ ln(336)，最终字符级 val loss 0.967（SmolLM 1.104 / TinyStories 0.643），训练用时 16.0 分钟，平均 311k tok/s，显存峰值 3.1GB。曲线见 `runs/s10m_char/loss_curve.png`。
 
 **为什么不能直接比 loss**：字符级每个 token 是 1 个字符，BPE 每个 token 平均约 3.9 个字符，"每个 token 的 loss"衡量的东西不一样。所以换算成 **bits-per-byte**：`bpb = 总 NLL / ln2 / UTF-8 字节数`。`src/evaluate.py bpb` 把同一段验证原文（从 BPE 的 val.bin 解码回文本）分别用两种分词器编码后计算，两个模型评估的是完全相同的文本。
 
 ### 结果
 
-（正式训练后运行 `python src/evaluate.py bpb --runs runs/s10m runs/s10m_char runs/s50m runs/s100m`，结果填在这里，原表在 `figures/bpb.md`。）
+验证原文：每个来源取 BPE val.bin 的前 30 万个 token，解码回原文（SmolLM 约 116 万字节，TinyStories 约 120 万字节）。原表在 `figures/bpb.md`。
+
+| run | 分词器（词表） | SmolLM loss | SmolLM 字节/token | **SmolLM bpb** | TinyStories loss | TinyStories 字节/token | **TinyStories bpb** |
+|---|---|---|---|---|---|---|---|
+| s10m | BPE（8192） | 3.665 | 3.87 | **1.367** | 1.897 | 4.01 | **0.683** |
+| s10m_char | 字符级（336） | 1.114 | 1.00 | **1.602** | 0.643 | 1.00 | **0.929** |
+| s50m | BPE（8192） | 3.054 | 3.87 | **1.139** | 1.486 | 4.01 | **0.535** |
+| s100m | BPE（8192） | 2.903 | 3.87 | **1.082** | 1.396 | 4.01 | **0.502** |
+| s10m `ckpt_tok100M`（参考） | BPE（8192） | — | 3.87 | **1.579** | — | 4.01 | **0.830** |
+
+最后一行是参考对照：BPE 版 s10m 训练到 1 亿 token 时的中途 checkpoint，看过约 3.9 亿字节文本；字符级版训练结束时看过约 3 亿字节。两者看过的文本量接近，但 BPE 这个 checkpoint 的学习率还没衰减完，对它不利。
+
+生成样例：同样 10 个 prompt，T=0.8、top-k=50、seed=42。字符级最多生成 800 个字符，约等于 BPE 的 200 个 token。全部样例见 [samples_C.md](samples_C.md)。
+
+| prompt | s10m_char（字符级） | s10m（BPE） |
+|---|---|---|
+| Once upon a time | , she saw a big cat in a big car. It was shiny. The cat looked scary! The cat went outside and wanted to play. The cat was so pretty! The cat said to the cat, "No, Tom, it's time to play!" … Tom thought for a moment. He told Tom to kiss his mom… | , there was a little boy named Timmy. Timmy loved to play with his toy car all day long. One day, Timmy's mommy gave him a big package of a new toy car. Timmy was so happy to show his mommy and daddy… |
+| The French Revolution began | portraying on an Athena Moon Castle and Matters. They were also begun to confer for many of these women on their own. Compared with praying things and mathematics… | in the aftermath of the Revolution, and the Roman Empire was the first settlement of the Roman Empire. In the 17th Century, the French Revolution brought new powers… |
+
+### 结论
+
+1. **相同 token 预算下，BPE 明显更好。** 换算成 bpb 后，字符级在 SmolLM 上是 1.602，BPE 是 1.367，高 17%；在 TinyStories 上是 0.929 和 0.683，高 36%。字符级的 loss（1.11）看起来远低于 BPE（3.67），但这只是因为每个 token 只要猜一个字符，要预测的内容少得多。**不同分词器之间直接比 loss 会得出完全错误的结论**，必须换算到 bpb。
+2. **差距主要来自"看过的文本量"和"上下文能覆盖多少原文"。** 训练 3 亿 token，字符级只看了约 3 亿字节文本，BPE 看了约 11.6 亿字节；上下文 512 个 token，字符级只覆盖约 100 个英文单词，BPE 覆盖约 400 个。拿看过文本量接近的 BPE 中途 checkpoint 对照（最后一行），SmolLM 上两者几乎一样（1.579 vs 1.602），TinyStories 上 BPE 仍然好一些（0.830 vs 0.929）。另外，同样一段文本，字符级要做大约 4 倍的前向计算。
+3. **字符级的长处是不会拼出不存在的词，但内容连贯性差。** 生成样例里，字符级模型拼写基本正确，语法也大体通顺，但很快会丢掉前文的主题（"The cat said to the cat""He told Tom to kiss his mom"）；说明文完全跑题，从"French Revolution"写到"Athena Moon Castle"。原因是它的上下文只有约 100 个词，还要先把很多容量花在"怎么拼单词"上。BPE 把常见单词和词根直接做成 token，模型可以把容量用在语义上。
+4. **字符级的好处是词表小。** embedding 只有 336 × 384 ≈ 0.13M 参数，BPE 是 3.15M。总参数少了 3M，但非 embedding 部分完全相同，所以模型的"计算能力"没有变化。词表很小，几乎不会遇到没见过的词：字符级只有极少数低频字符会变成 `<unk>`，这在评估中让字符级略占便宜，但影响很小。
 
 ---
 
