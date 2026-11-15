@@ -37,7 +37,7 @@ graph LR
 | **M1 流程跑通** | 两个数据集各 1 个分片（~0.57GB）+ debug 模型，阶段 1–5 的最小版本 | `sample.py` 能输出像样的英文片段；过拟合测试通过 |
 | **M2 第一个正式模型** | 全量数据（~3.7GB）+ s10m 完整训练（5090 上 4.6 分钟）+ 界面雏形 | `runs/s10m/` 有 loss 曲线，界面能生成 |
 | **M3 三模型对比** | s50m（45 分钟）、s100m（1 小时 56 分）训练完成 ✅，实验 A（含三人盲评）、B 完成 ✅，实验 C（字符级 vs BPE，本地 16 分钟）完成 ✅；界面完成 ✅ | `docs/experiments.md` 有叠图、样例表、结论 |
-| **M4 交付** | README、结构图、答辩问题清单 | 新机器按 README 能复现 |
+| **M4 交付** | README ✅、结构图与参数量（`docs/model.md`）✅、答辩问题清单（`docs/qa.md`）✅、答辩 PPT 与现场方案（`docs/slides/`、`docs/demo.md`）✅；干净环境复现、模拟答辩待组员完成 | 新机器按 README 能复现 |
 
 ## 模型规模
 
@@ -72,16 +72,16 @@ graph LR
 
 ## 交付物对照表
 
-| 要求（TARGET.md / CLAUDE.md） | 对应阶段 | 产物 |
-|---|---|---|
-| 准备数据集，预处理与词元化 | 2 | `src/prepare.py`、`src/tokenizer.py`、`docs/data.md` |
-| 从零实现 Decoder-only Transformer | 3 | `src/model.py` |
-| next-token prediction 训练，记录 loss 曲线 | 4 | `src/train.py`、`runs/*/log.csv`、`loss_curve.png` |
-| 交互界面：输入 prompt、调长度和温度、选 checkpoint | 5、7 | `src/sample.py`、`app/app.py` |
-| 至少比较两种训练设置或采样参数 | 6 | 实验 A（模型规模，分来源 val loss）+ 实验 B（采样参数） |
-| 说明数据来源、模型结构、训练设置 | 2、3、4、8 | `docs/data.md`、`docs/model.md`、配置副本 |
-| 模型结构图和参数量统计 | 3、8 | `docs/model.md` |
-| README：如何复现 | 8 | 根目录 `README.md` |
+| 要求（TARGET.md / CLAUDE.md） | 对应阶段 | 产物 | 状态 |
+|---|---|---|---|
+| 准备数据集，预处理与词元化 | 2 | `src/prepare.py`、`src/tokenizer.py`、`docs/data.md` | ✅ |
+| 从零实现 Decoder-only Transformer | 3 | `src/model.py` | ✅ |
+| next-token prediction 训练，记录 loss 曲线 | 4 | `src/train.py`、`runs/*/log.csv`、`loss_curve.png` | ✅ |
+| 交互界面：输入 prompt、调长度和温度、选 checkpoint | 5、7 | `src/sample.py`、`app/app.py` | ✅ |
+| 至少比较两种训练设置或采样参数 | 6 | 实验 A（模型规模，分来源 val loss）+ 实验 B（采样参数）+ 实验 C（字符级 vs BPE） | ✅ |
+| 说明数据来源、模型结构、训练设置 | 2、3、4、8 | `docs/data.md`、`docs/model.md`、配置副本 | ✅ |
+| 模型结构图和参数量统计 | 3、8 | `docs/model.md` | ✅ |
+| README：如何复现 | 8 | 根目录 `README.md` | ✅（冒烟验证；干净环境复现待组员） |
 
 ## 分工建议（3 人组）
 

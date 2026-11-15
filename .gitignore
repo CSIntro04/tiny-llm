@@ -22,3 +22,10 @@ __pycache__/
 
 # 打包的训练结果
 *.tar.gz
+
+# 导出的仅权重 checkpoint（分发用，不进 git）
+release/
+
+# 答辩 PPT 由 docs/slides/build_slides.py 生成，不进 git（模板 docs/slides/模板.pptx 进 git）
+docs/slides/*.pptx
+!docs/slides/模板.pptx

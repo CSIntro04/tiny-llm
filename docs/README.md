@@ -27,8 +27,15 @@
 6. **常见坑**
 7. **答辩可能被问的问题**
 
-## 实现阶段才会生成的文档
+## 实现阶段产出的文档
 
-- `docs/data.md`：数据集说明（阶段 2 产出）
-- `docs/experiments.md`：实验记录与生成样例（阶段 6 产出）
-- `docs/model.md`：模型结构图与参数量表（阶段 8 整理）
+| 文件 | 内容 |
+|---|---|
+| [data.md](data.md) | 数据集说明：来源、许可、下载文件与 sha256、清洗与丢弃统计、分词器、token 数 |
+| [model.md](model.md) | 模型结构图（含 Block 内张量形状）、按组件的参数量统计、训练设置表 |
+| [experiments.md](experiments.md) | 实验 A/B/C 的结果、图表、生成样例、盲评和结论 |
+| [qa.md](qa.md) | 答辩问题清单与参考回答、5 分钟演示脚本 |
+| [demo.md](demo.md) | 答辩现场运行方案：启动步骤、演示脚本与预期输出、兜底方案 |
+| `slides/` | 答辩 PPT |
+| `samples_*.md`、`blind_eval*` | 全部生成样例、盲评打分表与汇总 |
+| `figures/` | loss 叠图、scaling 图、结果表 |

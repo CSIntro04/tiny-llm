@@ -1,7 +1,8 @@
 """Gradio 交互界面：输入 prompt，选 checkpoint，调采样参数，看续写结果。
 
 用法：
-    python app/app.py            # 浏览器打开 http://127.0.0.1:7860
+    python app/app.py                    # 浏览器打开 http://127.0.0.1:7860
+    python app/app.py --preload all      # 答辩用：启动时就把三个正式模型都加载好
 
 三个标签页：单模型生成 / 三模型对比 / 训练过程。
 界面只负责"调用"：加载模型和生成全部复用 src/sample.py 的 load_model / generate_text。
@@ -9,6 +10,7 @@
 
 from __future__ import annotations
 
+import argparse
 import functools
 import html
 import random
@@ -226,7 +228,27 @@ def build_ui() -> gr.Blocks:
     return demo
 
 
+def preload(mode: str) -> None:
+    """启动时预加载模型，第一次点"生成"不用等。default 只加载默认模型；all 加载三模型对比用到的全部。"""
+    wanted = {"none": [], "default": [DEFAULT_CKPT],
+              "all": [DEFAULT_CKPT] + [f"runs/{r}/ckpt_best.pt" for r in COMPARE_RUNS]}[mode]
+    available = list_checkpoints()
+    for ckpt in dict.fromkeys(wanted):  # 去重并保持顺序
+        if ckpt in available:
+            t0 = time.time()
+            get_model(ckpt)
+            print(f"预加载 {ckpt}（{time.time() - t0:.1f}s）")
+        else:
+            print(f"跳过 {ckpt}：文件不存在")
+
+
 if __name__ == "__main__":
-    if DEFAULT_CKPT in list_checkpoints():
-        get_model(DEFAULT_CKPT)  # 预加载默认模型，第一次点"生成"不用等
-    build_ui().launch(server_name="127.0.0.1")
+    ap = argparse.ArgumentParser(description="Gradio 交互界面")
+    ap.add_argument("--preload", choices=["none", "default", "all"], default="default")
+    ap.add_argument("--port", type=int, default=7860)
+    args = ap.parse_args()
+    preload(args.preload)
+    # Gradio 默认只允许返回"当前工作目录 / 系统临时目录"里的文件；从 app/ 等其他目录启动时，
+    # runs/*/loss_curve.png 会被拒绝（InvalidPathError）。显式放行这两个只读的图片目录。
+    build_ui().launch(server_name="127.0.0.1", server_port=args.port,
+                      allowed_paths=[str(RUNS_DIR), str(FIGURES)])

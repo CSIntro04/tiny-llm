@@ -213,16 +213,34 @@ class GPT(nn.Module):
         return torch.optim.AdamW(groups, lr=lr, betas=betas, fused=use_fused)
 
 
+def param_breakdown(model: GPT) -> dict[str, int]:
+    """按组件统计参数量。lm_head 与 wte 共享，named_parameters() 只列出一次（记在 wte 下）。
+    "每层"几项是单个 Block 的数，乘以 n_layer 才是全部层。"""
+    groups = {"wte": 0, "wpe": 0, "每层 attn": 0, "每层 mlp": 0, "每层 LN": 0, "ln_f": 0}
+    for name, p in model.named_parameters():
+        if name.startswith("blocks."):
+            if not name.startswith("blocks.0."):
+                continue  # 每层结构相同，只统计第 0 层
+            part = name.split(".")[2]  # attn / mlp / ln_1 / ln_2
+            key = {"attn": "每层 attn", "mlp": "每层 mlp"}.get(part, "每层 LN")
+        else:
+            key = name.split(".")[0]
+        groups[key] += p.numel()
+    return groups
+
+
 def _report() -> None:
-    """打印四档预设的参数量，以及按 docs/00-roadmap.md 的方法粗估的显存和计算量。"""
+    """打印四档预设的参数量（含按组件拆分），以及按 docs/00-roadmap.md 的方法粗估的显存和计算量。"""
     print(f"{'名称':<6} {'层/维/头':<10} {'非emb(M)':>9} {'总参数(M)':>10} "
           f"{'权重+优化器(GB)':>15} {'FLOPs/token(M)':>15}")
+    rows = {}
     for name, preset in MODEL_PRESETS.items():
         cfg = GPTConfig(**preset)
         with torch.device("meta"):  # meta 设备只记录形状不分配内存，构建 s100m 也是瞬间完成
             model = GPT(cfg)
         n_total = model.num_params(non_embedding=False)
         n_non_emb = model.num_params(non_embedding=True)
+        rows[name] = (cfg, param_breakdown(model), n_total)
         # fp32 参数 4 + 梯度 4 + AdamW 两个状态 8 = 16 字节/参数（不含激活）
         state_gb = 16 * n_total / 1e9
         # 每 token 训练 FLOPs ≈ 6N（前向 2N + 反向 4N）+ 注意力的 12·L·T·C
@@ -230,6 +248,20 @@ def _report() -> None:
         arch = f"{cfg.n_layer}/{cfg.n_embd}/{cfg.n_head}"
         print(f"{name:<8} {arch:<12} {n_non_emb / 1e6:>9.2f} {n_total / 1e6:>10.2f} "
               f"{state_gb:>15.2f} {flops / 1e6:>15.0f}")
+
+    # 公式：每层 attn = c_attn(3C²+3C) + c_proj(C²+C) = 4C²+4C
+    #       每层 mlp  = c_fc(4C²+4C) + c_proj(4C²+C) = 8C²+5C
+    #       每层 LN   = 2 个 LayerNorm × (weight C + bias C) = 4C      → 每层合计 12C²+13C
+    print("\n按组件拆分（参数个数；lm_head 与 wte 共享，不重复计）")
+    keys = list(next(iter(rows.values()))[1])
+    print(f"{'组件':<10}" + "".join(f"{n:>14}" for n in rows))
+    for k in keys:
+        print(f"{k:<10}" + "".join(f"{b[k]:>14,}" for _, b, _ in rows.values()))
+    per_layer = [sum(b[k] for k in keys if k.startswith("每层")) for _, b, _ in rows.values()]
+    print(f"{'每层合计':<10}" + "".join(f"{v:>14,}" for v in per_layer))
+    print(f"{'×层数':<10}" + "".join(f"{v * c.n_layer:>14,}"
+                                    for v, (c, _, _) in zip(per_layer, rows.values())))
+    print(f"{'总计':<10}" + "".join(f"{t:>14,}" for _, _, t in rows.values()))
 
 
 if __name__ == "__main__":

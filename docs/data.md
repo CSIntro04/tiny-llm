@@ -127,7 +127,18 @@ TinyStories：
 
 手写 BPE 演示（`python src/tokenizer.py`，在一小段故事上合并 20 次）：前几次合并是 `h+e → he`、`' '+t → ' t'`、`' t'+he → ' the'`，即最高频的组合最先被合并。
 
-## 8. 复现
+## 8. 许可与使用注意
+
+| 来源 | 许可 | 对我们的要求 |
+|---|---|---|
+| SmolLM-Corpus 1B 子集 | ODC-By 1.0（Open Data Commons Attribution） | 使用、修改、再分发都允许，但必须**署名**数据来源。README 和报告里注明 HuggingFaceTB/smollm-corpus 及 ecreeth/1b-smollm-corpus 子集。子集中的 FineWeb-Edu 部分来自 CommonCrawl 网页，也需遵守 CommonCrawl 的使用条款。 |
+| TinyStories | CDLA-Sharing-1.0（Community Data License Agreement – Sharing） | 可以使用和修改；如果**再分发数据本身**（包括清洗后的版本），必须用同样的许可。用数据训练出的模型和结果不受此限制。 |
+
+- 本仓库**不再分发原始数据**：parquet 和 .bin 都不进 git，组员按 README 从 HuggingFace 下载。git 里只有分词器（`tokenizer.json`）和统计信息（`meta.json`）。
+- 模型生成的内容（尤其是说明文）经常有事实错误，只用于展示训练流程，不应当作事实引用。
+- 词表大小：BPE 8192（实验 C 的字符级词表 336，见 `data/processed_char/meta.json`）。
+
+## 9. 复现
 
 ```bash
 python src/prepare.py --datasets smollm,tinystories --tokenizer bpe --vocab_size 8192 --shards all
