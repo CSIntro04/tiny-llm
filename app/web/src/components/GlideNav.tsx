@@ -5,7 +5,8 @@ import { cn } from "@/lib/utils"
 
 export type NavItem = { id: string; label: string }
 
-export function GlideNav({ items }: { items: NavItem[] }) {
+// ready：区块渲染完成后再开始观察（单模型生成区块要等 checkpoint 列表加载完才出现）
+export function GlideNav({ items, ready = true }: { items: NavItem[]; ready?: boolean }) {
   const listRef = useRef<HTMLUListElement>(null)
   const [hover, setHover] = useState({ top: 0, height: 0, visible: false })
   const [active, setActive] = useState(items[0]?.id)
@@ -23,7 +24,7 @@ export function GlideNav({ items }: { items: NavItem[] }) {
     )
     items.forEach((it) => { const el = document.getElementById(it.id); if (el) io.observe(el) })
     return () => io.disconnect()
-  }, [items])
+  }, [items, ready])
 
   const glideTo = (el: HTMLElement) => setHover({ top: el.offsetTop, height: el.offsetHeight, visible: true })
 

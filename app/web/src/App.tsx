@@ -76,14 +76,14 @@ export default function App() {
             </div>
             <div className="reveal" style={{ animationDelay: "60ms" }}>
               <h1 className="text-ink mt-10 text-[21px] leading-snug font-semibold tracking-[-0.02em] text-balance">
-                从零训练的迷你语言模型。
+                从零训练的<br />迷你语言模型。
               </h1>
               <p className="text-ink-3 mt-2 text-[12.5px] leading-relaxed text-pretty">
                 手写的 Decoder-only Transformer，用 next-token prediction 训练。输入一段开头，看它逐个 token 续写。
               </p>
             </div>
             <div className="reveal border-line mt-7 hidden border-t border-dashed pt-6 lg:block" style={{ animationDelay: "120ms" }}>
-              <GlideNav items={NAV} />
+              <GlideNav items={NAV} ready={ckpts !== null} />
             </div>
             <dl className="reveal border-line mt-auto hidden space-y-1.5 border-t border-dashed pt-5 text-[11.5px] lg:block" style={{ animationDelay: "180ms" }}>
               {FACTS.map(([k, v]) => (

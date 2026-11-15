@@ -8,7 +8,7 @@ export function ModelStats({ stats }: { stats: Stats | null }) {
         ["结构", `${stats.n_layer}/${stats.n_embd}/${stats.n_head}`, "层 / 维 / 头"],
         ["参数", fmtM(stats.params), `非 emb ${fmtM(stats.params_non_emb)}`],
         ["词表", `${stats.vocab_size}`, stats.tokenizer.replace("Tokenizer", "")],
-        ["已训练", fmtM(stats.tokens, 0), `token · ${stats.iters} 步`],
+        ["已训练 token", fmtM(stats.tokens, 0), `${stats.iters} 步`],
         ["val loss", stats.best_val.toFixed(3), `上下文 ${stats.block_size}`],
       ]
     : []
