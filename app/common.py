@@ -22,7 +22,7 @@ from sample import Tokenizer, load_model  # noqa: E402
 
 RUNS_DIR = ROOT / "runs"
 FIGURES = ROOT / "docs/figures"
-MAIN_RUNS = ["s100m", "s50m", "s10m", "s10m_char"]  # 下拉框里排在最前面
+MAIN_RUNS = ["s100m", "s50m", "s10m", "s10m_char"]  # demo 页只展示这些正式 run（不含 debug/smoke/overfit）
 COMPARE_RUNS = ["s10m", "s50m", "s100m"]
 DEFAULT_CKPT = "runs/s100m/ckpt_best.pt"
 RESULT_TABLES = [("results.md", "最终结果（实验 A）"),
@@ -34,11 +34,8 @@ GPU_LOCK = threading.Lock()
 
 
 def list_checkpoints(runs_dir: Path = RUNS_DIR) -> list[str]:
-    """扫描 runs/*/ckpt_*.pt，返回相对项目根目录的路径。正式 run 在前，smoke/overfit 在后。"""
-    def order(p: Path) -> tuple[int, str]:
-        run = p.parent.name
-        return (MAIN_RUNS.index(run) if run in MAIN_RUNS else len(MAIN_RUNS), str(p))
-    paths = sorted(runs_dir.glob("*/ckpt_*.pt"), key=order)
+    """扫描正式 run（MAIN_RUNS）下的 ckpt_*.pt，返回相对项目根目录的路径，按 MAIN_RUNS 顺序排。"""
+    paths = [p for run in MAIN_RUNS for p in sorted((runs_dir / run).glob("ckpt_*.pt"))]
     return [p.relative_to(ROOT).as_posix() for p in paths]
 
 
@@ -79,9 +76,9 @@ def resolve_seed(seed: float) -> int:
 
 
 def list_runs() -> list[str]:
-    """有训练日志和 loss 曲线的 run。"""
-    return [p.parent.name for p in sorted(RUNS_DIR.glob("*/log.csv"))
-            if (p.parent / "loss_curve.png").exists()]
+    """有训练日志和 loss 曲线的正式 run（按 MAIN_RUNS 顺序）。"""
+    return [run for run in MAIN_RUNS
+            if (RUNS_DIR / run / "log.csv").exists() and (RUNS_DIR / run / "loss_curve.png").exists()]
 
 
 def run_curve(run: str) -> str | None:

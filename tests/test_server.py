@@ -37,6 +37,15 @@ def test_checkpoints_and_model() -> None:
     assert m["n_layer"] == 6 and m["vocab_size"] == 8192 and m["params"] > m["params_non_emb"]
 
 
+def test_only_main_runs_listed() -> None:
+    # demo 页只展示正式训练的模型，不出现 debug / smoke / overfit 这些调试 run
+    bad = ("debug", "smoke", "overfit")
+    items = client.get("/api/checkpoints").json()["items"]
+    assert items and not any(b in c for c in items for b in bad)
+    runs = client.get("/api/runs").json()
+    assert runs and not any(b in r for r in runs for b in bad)
+
+
 @pytest.mark.parametrize("temperature,top_k,top_p", [(0.8, 50, 1.0), (0.0, 0, 1.0), (1.2, 0, 0.9)])
 def test_stream_matches_generate_text(temperature: float, top_k: int, top_p: float) -> None:
     """同一个 seed：流式拼起来的文本 == generate_text 一次性生成的文本。"""
@@ -53,6 +62,8 @@ def test_stream_matches_generate_text(temperature: float, top_k: int, top_p: flo
 
 def test_rejects_unknown_paths() -> None:
     assert client.get("/api/model", params={"ckpt": "../etc/passwd"}).status_code == 404
+    assert client.get("/api/model", params={"ckpt": "runs/smoke_s10m/ckpt_best.pt"}).status_code == 404
+    assert client.get("/api/runs/smoke_s10m/curve").status_code == 404
     assert client.post("/api/generate", json={"ckpt": "runs/s10m/../../x.pt"}).status_code == 404
     assert client.get("/api/runs/nope/curve").status_code == 404
     assert client.post("/api/generate", json={"ckpt": CKPT, "temperature": 5}).status_code == 422
