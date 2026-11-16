@@ -69,7 +69,7 @@ docs/
 |---|---|
 | `results/samples_{A,B,C,progress}.{jsonl,md}` | `python src/eval_prompts.py --grid scale/sampling/progress --out docs/results/samples_*.jsonl` |
 | `results/blind_eval/sheet.md`、`key.json` | 同上，`--grid scale` 时顺带生成。**打分前不要看 key.json** |
-| `results/blind_eval/R1–R3.md` | 三位组员手填的打分表（这三份是手写的，重新生成时注意不要覆盖） |
+| `results/blind_eval/R1–R5.md` | 五位打分人手填的打分表（这五份是手写的，重新生成时注意不要覆盖） |
 | `results/blind_eval/summary.md` | `python src/score_blind.py --sheets docs/results/blind_eval/R*.md --flip_repeat R3` |
 | `figures/*.png`、`figures/results.md` | `python src/plot_compare.py --runs runs/s10m runs/s50m runs/s100m --out docs/figures/` |
 | `figures/ckpt_eval.md`、`figures/bpb.md` | `python src/evaluate.py loss ...` / `python src/evaluate.py bpb ...` |

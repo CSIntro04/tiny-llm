@@ -58,7 +58,7 @@ parquet ──prepare.py──▶ data/processed/*.bin（uint16） + tokenizer.j
 | `src/evaluate.py` | 在同一批验证数据上重新算 loss（`loss`）和 bits-per-byte（`bpb`） |
 | `src/eval_prompts.py` | 固定 prompt 批量生成样例、distinct-2、盲评表 |
 | `src/plot_compare.py` | 多 run 的 loss 叠图、scaling 图、最终结果表 |
-| `src/score_blind.py` | 汇总三人盲评 |
+| `src/score_blind.py` | 汇总人工盲评（R1–R5） |
 | `src/export.py` | 导出仅权重 checkpoint 到 `release/` |
 | `src/demo_check.py` | 答辩前自检：GPU、checkpoint、生成结果与记录是否一致 |
 | `src/check_env.py` | 环境自检：版本、bf16、SDPA、torch.compile |
@@ -117,7 +117,7 @@ python src/score_blind.py --sheets docs/results/blind_eval/R*.md --flip_repeat R
 conda run -n slides python docs/defense/slides/build_slides.py   # 第一次先 conda env create -f docs/defense/slides/environment.yml
 ```
 
-注意：`--grid scale` 会重写 `docs/results/blind_eval/sheet.md` 和 `key.json`；如果生成结果变了，已有的 R1–R3 打分就和新样本对不上了。`demo_check.py` 也以 `samples_A.jsonl` 为参考答案。
+注意：`--grid scale` 会重写 `docs/results/blind_eval/sheet.md` 和 `key.json`；如果生成结果变了，已有的 R1–R5 打分就和新样本对不上了。`demo_check.py` 也以 `samples_A.jsonl` 为参考答案。
 
 ## 5. 提交前检查
 

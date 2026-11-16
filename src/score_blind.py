@@ -1,8 +1,7 @@
-"""汇总实验 A 的人工盲评：读三位组员填好的打分表，按答案还原模型，求平均。
+"""汇总实验 A 的人工盲评：读组员填好的打分表（人数不限），按答案还原模型，求平均。
 
 用法：
-    python src/score_blind.py --sheets docs/results/blind_eval/R1.md docs/results/blind_eval/R2.md docs/results/blind_eval/R3.md \
-        --flip_repeat R3 --out docs/results/blind_eval/summary.md
+    python src/score_blind.py --sheets docs/results/blind_eval/R*.md --flip_repeat R3 --out docs/results/blind_eval/summary.md
 
 --flip_repeat：某位打分人把"重复"一项理解反了（重复越多分越高）时，把他的这一项换算成 6 − x。
 判断依据是这一项和自动指标 distinct-2 的相关系数：正常应为正，反了会是明显的负数（脚本会打印出来）。
@@ -85,7 +84,7 @@ def main() -> None:
         print(f"{r}: 相关系数 {c:+.2f}，{note}")
         scores[r] = s
 
-    # 每条样本先对三人取平均，再按 模型 × 类别 平均
+    # 每条样本先对所有打分人取平均，再按 模型 × 类别 平均
     def avg(run: str, k: str, dim: int) -> tuple[float, int]:
         per_item = []
         for sid, v in key.items():
@@ -96,7 +95,7 @@ def main() -> None:
                 per_item.append(st.mean(vals))
         return (st.mean(per_item) if per_item else float("nan")), len(per_item)
 
-    lines += ["\n## 平均分（1–5，越高越好；每条先对三人取平均，再对 5 个 prompt 平均）\n",
+    lines += [f"\n## 平均分（1–5，越高越好；每条先对 {len(scores)} 人取平均，再对 5 个 prompt 平均）\n",
               "| 模型 | 故事：语法 | 故事：连贯 | 故事：重复 | 说明文：语法 | 说明文：连贯 | 说明文：事实 | 说明文：重复 |",
               "|---|---|---|---|---|---|---|---|"]
     cols = [("story", 0), ("story", 1), ("story", 3),
@@ -105,16 +104,16 @@ def main() -> None:
         lines.append(f"| {run} | " + " | ".join(f"{avg(run, k, d)[0]:.2f}" for k, d in cols) + " |")
 
     # 打分人之间的一致性：每两人在同一项上的相关系数
+    pairs = [(a, b) for i, a in enumerate(scores) for b in list(scores)[i + 1:]]
     lines += ["\n## 打分人之间的一致性（同一项分数的相关系数，换算后）\n",
-              "| 项目 | " + " | ".join(f"{a}–{b}" for i, a in enumerate(scores) for b in list(scores)[i + 1:]) + " |",
-              "|---|" + "---|" * 3]
+              "| 项目 | " + " | ".join(f"{a}–{b}" for a, b in pairs) + " |",
+              "|---|" + "---|" * len(pairs)]
     for j, dim in enumerate(DIMS):
         row = []
-        for i, a in enumerate(scores):
-            for b in list(scores)[i + 1:]:
-                ids = [s for s in key if not (j == 2 and kind[s] == "story")
-                       and scores[a][s][j] is not None and scores[b][s][j] is not None]
-                row.append(f"{corr([scores[a][s][j] for s in ids], [scores[b][s][j] for s in ids]):+.2f}")
+        for a, b in pairs:
+            ids = [s for s in key if not (j == 2 and kind[s] == "story")
+                   and scores[a][s][j] is not None and scores[b][s][j] is not None]
+            row.append(f"{corr([scores[a][s][j] for s in ids], [scores[b][s][j] for s in ids]):+.2f}")
         lines.append(f"| {dim} | " + " | ".join(row) + " |")
     lines.append("\n故事类不评'事实'（表上要求填 -），有人填了也不计入。")
 

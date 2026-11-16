@@ -466,12 +466,12 @@ def slide_scale_curves(s) -> None:
 
 def slide_scale_human(s) -> None:
     set_title(s, "实验 A：0.01B 能写故事，写不了说明文")
-    lead(s, "三人盲评（1–5 分）：故事在 0.05B 到顶，说明文到 0.1B 还在进步")
+    lead(s, "五人盲评（1–5 分）：故事在 0.05B 到顶，说明文到 0.1B 还在进步")
     cd = CategoryChartData()
     cd.categories = ["故事·语法", "故事·连贯", "说明文·语法", "说明文·连贯", "说明文·事实"]
-    cd.add_series("s10m", (3.00, 1.93, 1.87, 1.40, 1.47))
-    cd.add_series("s50m", (4.07, 3.20, 2.53, 1.53, 1.47))
-    cd.add_series("s100m", (4.07, 3.07, 3.07, 2.00, 2.67))
+    cd.add_series("s10m", (3.36, 2.20, 2.24, 1.40, 1.44))
+    cd.add_series("s50m", (4.28, 3.32, 3.04, 2.04, 1.84))
+    cd.add_series("s100m", (4.32, 3.04, 3.56, 2.28, 2.80))
     gf = s.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(0.8), Inches(2.0),
                             Inches(6.3), Inches(4.6), cd)
     gf.name = "盲评图"
@@ -493,11 +493,11 @@ def slide_scale_human(s) -> None:
          ("in the aftermath of the Revolutionary War, and on 17 September 1789, the French Revolution was declared…", {"latin": "Arial"})]],
         fill=NAVY_TINT, size=13, line=1.1, name="样例 s100m")
     text(s, 7.4, 5.6, 4.3, 0.45, ["大模型更像样，但事实仍经常是编的"], size=13, color=GRAY)
-    notes(s, "【约 50 秒】loss 之外我们还做了人工盲评：30 条生成样本打乱顺序、隐藏模型名，三个组员独立打分。"
+    notes(s, "【约 50 秒】loss 之外我们还做了人工盲评：30 条生成样本打乱顺序、隐藏模型名，五位打分人独立打分。"
              "故事类从 0.01B 到 0.05B 提升很明显，但 0.05B 和 0.1B 几乎一样——写简单故事 0.05B 就够了，"
-             "这和 TinyStories 上 loss 只差 0.1 一致。说明文一直到 0.1B 都在进步，事实性到 0.1B 才明显提高。"
+             "这和 TinyStories 上 loss 只差 0.1 一致。说明文一直到 0.1B 都在进步，事实性在 0.05B 到 0.1B 这一步提升最大。"
              "右边是例子：小模型反复说 Roman Empire，大模型出现了 1789 这样的正确年份，但后面的内容还是编的。"
-             "（如果被问：有一位组员把“重复”一项打反了，和自动指标负相关，我们按 6 减分数换算，文档里如实记录。）")
+             "（如果被问：有一位打分人把“重复”一项打反了，和自动指标负相关，我们按 6 减分数换算；另一位整体打分偏松，但去掉这一位不影响排序。文档里如实记录。）")
 
 
 def slide_sampling(s) -> None:
