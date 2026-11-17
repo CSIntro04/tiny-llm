@@ -1,0 +1,22 @@
+# conda 环境定义（无 NVIDIA 显卡的电脑：MacBook、没有独显的 Windows / Linux）。
+# 创建：conda env create -f environment-cpu.yml
+# 和 environment.yml 的区别只有两点：PyTorch 换成 CPU 版；去掉 CUDA 和 gcc（只有 GPU 上的 torch.compile 需要）。
+# 其余包的版本与 environment.yml 一致。环境名同为 tiny-llm，所以 README 里的命令不用改。
+# 已在 linux-64、osx-arm64（Apple 芯片 Mac）、win-64 三个平台上解析通过（2026-11-17）。
+name: tiny-llm
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12.16
+  - pytorch=2.14.1=cpu*      # =cpu* 约束构建字符串，强制装 CPU 版（Mac 上只有 CPU 版）
+  - numpy=2.5.4
+  - tokenizers=0.23.3
+  - pyarrow=26.0.0
+  - datasets=5.2.0
+  - huggingface_hub=1.32.0
+  - pyyaml=6.0.3
+  - matplotlib=3.11.2
+  - gradio=6.32.0
+  - tqdm=4.70.1
+  - pytest=9.2.0
+  - jupyterlab=4.6.6

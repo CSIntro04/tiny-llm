@@ -21,7 +21,7 @@
 - 如果在原生 Windows 上运行，`torch.compile` 默认关闭（Triton 支持不好），通过配置项 `compile` 来开关。DataLoader 的 `num_workers` 在 Windows 上设成 0 或者加 `if __name__ == "__main__"` 保护。
 - 环境用 **Miniconda + Python 3.12**，环境名 `tiny-llm`。安装包一律走**清华 TUNA 镜像**（conda 和 pip 都是）；数据集从 HuggingFace 下载（见下方"工作方式"中的数据下载规则）。
 - **能 `conda install`（conda-forge）就不用 pip**；pip 只作兜底（例如 conda-forge 没有支持 sm_120 的 PyTorch 构建时），用了要在文档里记录原因。不要混用 `defaults` 和 `conda-forge` 频道。
-- 依赖以 `environment.yml` 为主，`requirements.txt` 为辅（版本保持一致）。详见 `docs/design/01-environment.md`。
+- 依赖以 `environment.yml` 为主，`requirements.txt` 为辅（版本保持一致）。没有 NVIDIA 显卡的组员（Mac、无独显电脑）用 `environment-cpu.yml`，三个文件的包版本要一起改。详见 `docs/design/01-environment.md`。
 
 ## 模型规模目标
 

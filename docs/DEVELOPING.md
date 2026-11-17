@@ -24,7 +24,7 @@
 
 ### 新机器上恢复工作环境
 
-1. 建环境：`conda env create -f environment.yml && conda activate tiny-llm && python src/check_env.py`（镜像配置见根 README 第 1 节）。
+1. 建环境：`conda env create -f environment.yml && conda activate tiny-llm && python src/check_env.py`（镜像配置见根 README 第 1 节）。没有 NVIDIA 显卡（Mac 等）把 `environment.yml` 换成 `environment-cpu.yml`。
 2. 数据：`python src/prepare.py --datasets smollm,tinystories --tokenizer bpe --vocab_size 8192 --shards all`（约 25 分钟），或者直接从旧机器拷 `data/processed/*.bin`。
 3. 模型：只需要生成 → 从交大云盘下载 `tiny-llm-weights.tar` 解压到 `runs/`；需要续训 → 用 `runs.tar.gz`（`tar xzf runs.tar.gz`，含优化器状态）。
 4. 检查：`pytest tests/`，再 `python src/demo_check.py`。
@@ -74,7 +74,7 @@ parquet ──prepare.py──▶ data/processed/*.bin（uint16） + tokenizer.j
 - **预计超过 10 分钟的训练先和大家确认**配置、耗时、显存；验证代码一律先跑 `--max_iters 50` 冒烟。
 - **新实验用新的 run 名**（`--name`），不要覆盖 `runs/` 下已有的结果。`train.py` 发现目录已存在会拒绝运行（`tests/test_train.py::test_refuse_existing_run`），除非加 `--resume`。
 - **改了模型结构或训练逻辑，先跑过拟合测试**：`python src/train.py --config configs/debug.yaml --name overfit_xxx --overfit`，loss 应接近 0。
-- 依赖：能 `conda install`（conda-forge）就不用 pip，都走清华 TUNA 镜像；`environment.yml` 和 `requirements.txt` 版本保持一致。
+- 依赖：能 `conda install`（conda-forge）就不用 pip，都走清华 TUNA 镜像；`environment.yml`、`environment-cpu.yml` 和 `requirements.txt` 版本保持一致。
 - 本地 8GB 显卡跑正式配置：用 `--batch_size` / `--grad_accum` 覆盖，乘积保持 256。显存不够时依次：减 batch → 缩短上下文 → 开 `grad_ckpt` → 缩小模型。
 
 ## 4. 常见改动的操作步骤

@@ -172,7 +172,13 @@ def train(cfg: dict, resume: bool = False, overfit: bool = False) -> dict[str, f
     start_it = it
 
     raw_model = model  # 保存 checkpoint 用原模型；compile 后的模型 state_dict 键名带 _orig_mod.
-    if cfg["compile"]:
+    use_compile = cfg["compile"]
+    if use_compile and device != "cuda":
+        # CPU 上的 torch.compile 要现场调用 C++ 编译器（Mac / 没装编译器的电脑会报错），
+        # 而且对 CPU 训练几乎没有加速，所以没有 GPU 时直接关掉
+        print("没有 GPU：关闭 torch.compile（CPU 上需要 C++ 编译器，且加速不明显）")
+        use_compile = False
+    if use_compile:
         model = torch.compile(model)  # 第一次前向会编译 1–2 分钟
 
     B, T, accum = tc["batch_size"], cfg["model"]["block_size"], tc["grad_accum"]

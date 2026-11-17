@@ -2,8 +2,12 @@
 
 用法：python src/check_env.py
 每一项打印 [OK] 或 [FAIL]，任一项失败时退出码为 1。
+
+装的是 CPU 版 PyTorch（environment-cpu.yml，Mac 或没有 NVIDIA 显卡的电脑）时，
+自动改为 CPU 模式：跳过显卡和 torch.compile 两项，bf16 和 SDPA 在 CPU 上检查。
 """
 
+import functools
 import math
 import sys
 from typing import Callable
@@ -44,17 +48,23 @@ def check_gpu() -> str:
     return f"{props.name}, {mem_gb:.1f} GB, capability {cap}"
 
 
-def check_bf16() -> str:
+def check_torch_cpu() -> str:
+    """CPU 模式：只检查 torch 版本。"""
+    assert _version_tuple(torch.__version__) >= (2, 7), f"torch {torch.__version__} < 2.7"
+    return f"torch {torch.__version__}（CPU 版，没有 GPU 时训练和生成都会自动用 CPU）"
+
+
+def check_bf16(device: str = "cuda") -> str:
     """bf16 矩阵乘法：autocast 下结果应与 fp32 接近。
 
     bf16 有 8 位指数（和 fp32 一样，数值范围大，不容易溢出），但只有 7 位尾数，
     所以精度较低。这里用相对误差判断。
     """
     torch.manual_seed(0)
-    a = torch.randn(1024, 1024, device="cuda")
-    b = torch.randn(1024, 1024, device="cuda")
+    a = torch.randn(1024, 1024, device=device)
+    b = torch.randn(1024, 1024, device=device)
     ref = a @ b  # fp32 参考结果
-    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+    with torch.autocast(device_type=device, dtype=torch.bfloat16):
         out = a @ b  # autocast 自动把 matmul 转成 bf16 计算
     assert out.dtype == torch.bfloat16, f"autocast 输出类型是 {out.dtype}"
     rel_err = ((out.float() - ref).norm() / ref.norm()).item()
@@ -73,11 +83,11 @@ def _naive_causal_attention(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -
     return att @ v  # (B, nh, T, T) @ (B, nh, T, hs) -> (B, nh, T, hs)
 
 
-def check_sdpa() -> str:
+def check_sdpa(device: str = "cuda") -> str:
     """F.scaled_dot_product_attention(is_causal=True) 能跑、结果正确、满足因果性。"""
     torch.manual_seed(0)
     B, nh, T, hs = 2, 4, 128, 64
-    q, k, v = (torch.randn(B, nh, T, hs, device="cuda", dtype=torch.bfloat16) for _ in range(3))
+    q, k, v = (torch.randn(B, nh, T, hs, device=device, dtype=torch.bfloat16) for _ in range(3))
     out = F.scaled_dot_product_attention(q, k, v, is_causal=True)
     assert out.shape == (B, nh, T, hs), f"输出形状 {tuple(out.shape)}"
 
@@ -109,14 +119,23 @@ def check_compile() -> str:
 
 
 def main() -> None:
-    checks: list[Callable[[], str]] = [check_torch, check_gpu, check_bf16, check_sdpa, check_compile]
+    checks: list[tuple[str, Callable[[], str]]]
+    if torch.version.cuda is None:
+        # CPU 版 PyTorch：有意不用 GPU（Mac / 无独显），不算失败
+        print("检测到 CPU 版 PyTorch，按 CPU 模式检查（跳过显卡和 torch.compile）\n")
+        checks = [("check_torch", check_torch_cpu),
+                  ("check_bf16", functools.partial(check_bf16, "cpu")),
+                  ("check_sdpa", functools.partial(check_sdpa, "cpu"))]
+    else:
+        checks = [(f.__name__, f) for f in (check_torch, check_gpu, check_bf16, check_sdpa,
+                                            check_compile)]
     failed = 0
-    for check in checks:
+    for name, check in checks:
         try:
             print(f"[OK] {check()}")
         except Exception as e:  # 自检脚本：捕获所有错误，继续跑后面的项
             failed += 1
-            print(f"[FAIL] {check.__name__}: {type(e).__name__}: {e}")
+            print(f"[FAIL] {name}: {type(e).__name__}: {e}")
     if failed:
         print(f"\n{failed} 项失败")
         sys.exit(1)

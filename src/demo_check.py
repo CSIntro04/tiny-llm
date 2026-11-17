@@ -1,8 +1,8 @@
 """答辩前自检：确认三个正式模型都在、能加载、生成结果和实验记录一致，并测生成速度。
 
 用法：
-    python src/demo_check.py                 # GPU（默认）
-    python src/demo_check.py --device cpu    # 测 CPU 兜底方案的速度
+    python src/demo_check.py                 # 有 GPU 用 GPU，没有自动用 CPU
+    python src/demo_check.py --device cpu    # 有 GPU 也强制用 CPU，测兜底方案的速度
 
 检查项：
 1. CUDA 是否可用、显卡型号；
@@ -69,7 +69,8 @@ def check_run(run: str, device: str, n_tokens: int) -> bool:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="答辩前自检")
-    ap.add_argument("--device", default="cuda")
+    # 默认：有 GPU 用 GPU，没有就用 CPU（Mac、无独显的电脑）
+    ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--n_tokens", type=int, default=50)
     args = ap.parse_args()
 

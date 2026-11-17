@@ -13,6 +13,7 @@
 
 ```
 environment.yml        conda 环境定义（主）
+environment-cpu.yml    没有 NVIDIA 显卡时用的 CPU 版（Mac、无独显电脑）
 requirements.txt       pip 参考清单（辅，版本与 environment.yml 一致）
 .gitignore
 src/check_env.py       环境自检脚本
@@ -116,6 +117,22 @@ pip install "torch>=2.8"     # 走 TUNA 源；Linux 上 torch 2.8+ 的默认 whe
 - 原生 Windows：`compile` 默认关闭；DataLoader（如果用）`num_workers=0` 或加 `if __name__ == "__main__"`。
 - WSL2 下数据放在 Linux 文件系统（如 `~/Codes/tiny-llm/data`），**不要**放 `/mnt/c/...`，跨文件系统读写很慢。
 
+### 6.1 没有 NVIDIA 显卡（Mac / 无独显电脑）
+
+`environment.yml` 用 `pytorch=...=cuda*` 强制装 GPU 版，Mac 和没有 NVIDIA 显卡的电脑装不上。这时用 `environment-cpu.yml`：
+
+```bash
+conda env create -f environment-cpu.yml   # 环境名同样是 tiny-llm，后面的命令都不用改
+conda activate tiny-llm
+python src/check_env.py                   # 自动进入 CPU 模式：检查版本、CPU 上的 bf16 和 SDPA
+```
+
+- 和 GPU 版的区别只有两点：PyTorch 是 CPU 构建（`=cpu*`），去掉了 `cuda-version`、`cuda-cudart-dev`、`gcc`。其余包版本相同。
+- 已在 linux-64、win-64、osx-arm64 三个平台上解析通过。Mac 需要 Apple 芯片（M1 及以后）和 macOS 12 或更新；conda-forge 的 Mac 版 PyTorch 只有 CPU 构建，代码也没有用 Apple 的 MPS 后端。
+- 代码在没有 GPU 时自动用 CPU：`train.py` 会自动关闭 `torch.compile`（CPU 上它要现场调 C++ 编译器，Mac 上通常没有，而且几乎不加速）；`sample.py`、两套界面、`demo_check.py` 都会退回 CPU。
+- 速度参考（Ryzen 5 9600X，6 核）：训练 debug 模型约 12k tok/s，完整跑完 `configs/debug.yaml`（约 2000 万 token）要 25–30 分钟，所以复现时建议加 `--max_iters 200` 之类的参数缩短；生成 s10m 约 230 tok/s、s100m 约 40 tok/s，演示和开发界面都够用。笔记本 CPU 会慢一些。
+- CPU 上浮点运算的顺序和 GPU 不同，同一个 seed 生成的文字会在若干 token 后和 GPU 的记录分叉，`demo_check.py` 对此只提示不判失败。
+
 ### 7. `.gitignore`
 
 ```
@@ -192,3 +209,5 @@ python src/check_env.py
 ```
 
 已用锁定版本的 `environment.yml` 新建一个临时环境重新验证过，五项全部通过。
+
+2026-11-17：新增 `environment-cpu.yml`。在本机（linux-64）用它新建临时环境验证：`check_env.py` CPU 模式三项通过，`pytest tests/` 42 项通过，debug 冒烟训练、`sample.py`、`demo_check.py` 均正常；osx-arm64 和 win-64 用 `conda env create --dry-run` 解析通过（未在真机上装过）。

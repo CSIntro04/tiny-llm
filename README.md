@@ -24,7 +24,7 @@
 
 ```bash
 # 1. 建环境（只需一次；镜像配置见第 1 节）
-conda env create -f environment.yml
+conda env create -f environment.yml        # 没有 NVIDIA 显卡（Mac 等）改用 environment-cpu.yml
 conda activate tiny-llm
 
 # 2. 下载训练好的模型（只需一次）：从第 4 节的交大云盘链接下载 tiny-llm-weights.tar，放到项目根目录后
@@ -74,6 +74,8 @@ python app/server.py --preload all
    ```
 
 详见 [docs/design/01-environment.md](docs/design/01-environment.md)。原生 Windows 上把配置里的 `compile` 设成 `false`。
+
+**没有 NVIDIA 显卡（MacBook、无独显电脑）**：第 3 步改用 `conda env create -f environment-cpu.yml`（CPU 版 PyTorch，环境名同样是 `tiny-llm`），其余命令不变。`check_env.py` 会自动按 CPU 模式检查，训练时自动关闭 `torch.compile`。CPU 适合跑界面、生成、测试和 debug 模型，正式规模的训练还是要用 GPU。Mac 需要 Apple 芯片和 macOS 12+。详见 [01-environment.md 第 6.1 节](docs/design/01-environment.md)。
 
 ## 2. 数据
 

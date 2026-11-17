@@ -2,6 +2,7 @@
 # 推荐用 conda：conda env create -f environment.yml
 # 用 pip 时需要自备 Python 3.12、C 编译器（torch.compile 用）；
 # Linux 上 torch 的默认 wheel 已自带 CUDA 运行库，无需单独装 CUDA。
+# 没有 NVIDIA 显卡（Mac 等）推荐用 environment-cpu.yml；用 pip 时 Mac 上的默认 torch wheel 就是 CPU 版。
 torch==2.14.1
 numpy==2.5.4
 tokenizers==0.23.3
