@@ -148,7 +148,24 @@ TinyStories 词汇少、句式固定，s10m 的 loss 就已经到 1.85；SmolLM 
 **三个模型的输出差异和 loss 的差距一致吗？**
 基本一致。s10m 到 s50m 的 loss 差距大（0.555），盲评里故事的语法、连贯分也提升明显；s50m 到 s100m 的 loss 只差 0.134，故事分几乎一样，只有说明文还在进步。
 
-## 八、展望与个人
+## 八、复现与环境
+
+**怎么证明别人能照着 README 复现？**
+2026-11-20 在一台完全干净的 Linux 机器上（Intel Core Ultra 5 125H，18 线程，无 NVIDIA 显卡）用 `git worktree` 拉出副本、新建独立环境，从头跑通：建环境 94 秒；`check_env.py` 三项通过；`pytest tests/` 35 passed / 7 skipped；`--shards 1` 数据 3 分 36 秒、2.54 亿训练 token；debug 模型 1200 步（fp32）训练 50.8 分钟，val 9.06 → 3.99；`sample.py` 正常生成，230 tok/s。全程只用 README 里的命令，记录在 [01-environment.md](../design/01-environment.md) 的环境记录。
+
+**没有 GPU 怎么办？**
+用 `environment-cpu.yml` 建环境（环境名同样是 `tiny-llm`）：`check_env.py` 自动按 CPU 检查，`train.py` 自动关闭 `torch.compile`，`sample.py` 和两套界面自动退回 CPU。CPU 能跑测试、生成、界面和 debug 训练；正式规模的训练仍需要 GPU。CPU 训练要加 `--dtype float32`（除非 CPU 支持 AVX512-BF16）。
+
+**为什么 CPU 上 bf16 会慢到不可用？**
+bf16 矩阵乘法要靠 CPU 指令集加速：Zen 4 等支持 AVX512-BF16 的 CPU 没问题；Intel 12 代以后的大小核（如 Core Ultra）没有 AVX512/AMX，PyTorch 会退回极慢的软件实现——实测 30 分钟走不完 1 步。加 `--dtype float32` 后 2.4 秒/步（约 6.5k tok/s）。这是硬件限制，不是代码 bug；GPU 上继续用 bf16。
+
+**HuggingFace 下载失败怎么办？**
+国内网络下 `huggingface.co` 经常 DNS 解析失败，先 `export HF_ENDPOINT=https://hf-mirror.com` 再跑 `prepare.py`。脚本按文件下载、已下载的会跳过，中断后重跑同一条命令即可续上；注意 `meta.json`、`tokenizer.json` 会重新生成，建议在副本里跑。
+
+**conda 建环境很慢或报错怎么办？**
+先 `conda config --show-sources`，两个位置都要看（`~/.condarc` 和 `~/miniconda3/.condarc`）；去掉 `defaults`、设 `channel_priority: strict`，再 `conda clean -i`。只用 conda-forge + TUNA 实测 94 秒。环境名冲突时报 `prefix already exists`，用 `-n` 换个名字，不要删掉现有可用环境。
+
+## 九、展望与个人
 
 **如果给你们更多时间/算力，下一步做什么？**
 ① 更多数据、训练更久，s100m 现在还在欠拟合；② 换 RoPE 位置编码，把位置信息"旋转"进 q、k，可以处理比训练时更长的上下文；③ 加 KV cache，生成速度能快很多；④ 加大上下文长度；⑤ 用问答数据做指令微调，让模型能回答问题而不只是续写。
@@ -170,4 +187,4 @@ TinyStories 词汇少、句式固定，s10m 的 loss 就已经到 1.85；SmolLM 
 ## 待办
 
 - [ ] 每位组员完成一次模拟答辩（另一位组员随机抽 5 题）。
-- [ ] 另一位组员在干净环境里按 README 从头跑到 debug 模型生成。
+- [x] 另一位组员在干净环境里按 README 从头跑到 debug 模型生成。（2026-11-20，无 GPU 的 Linux 机器；环境创建 94 秒、数据 3 分 36 秒、debug 1200 步 50.8 分钟、生成 230 tok/s，记录见 [01-environment.md](../design/01-environment.md)）

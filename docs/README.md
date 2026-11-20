@@ -7,7 +7,7 @@ B03「从零训练迷你语言模型」的全部文档。我们在 SmolLM-Corpus
 | 我想…… | 看这里 |
 |---|---|
 | 不训练，直接打开界面看效果 | 根目录 [README.md](../README.md) 的「快速运行 demo」 |
-| 从头复现（环境 → 数据 → 训练 → 生成） | 根目录 [README.md](../README.md) 第 1–6 节 |
+| 从头复现（环境 → 数据 → 训练 → 生成） | 根目录 [README.md](../README.md) 第 1–6 节；无 GPU 干净环境的实测步骤见 [report/reproduction.md](report/reproduction.md) |
 | 看实验结论和图表 | [report/experiments.md](report/experiments.md) |
 | 准备答辩 | defense/ 下的问答、演示方案、速查表（见下表） |
 | 弄懂某一步的原理和实现细节 | design/ 下对应阶段的文档（见下表） |
@@ -20,7 +20,7 @@ docs/
   README.md        本索引
   DEVELOPING.md    继续开发指南
   design/          阶段设计文档 00–08
-  report/          交付文档：数据、模型、实验
+  report/          交付文档：数据、模型、实验、复现记录
   defense/         答辩材料：问答、演示、速查、PPT
   results/         生成样例、盲评数据（脚本生成）
   figures/         图和结果表（脚本生成）
@@ -51,6 +51,7 @@ docs/
 | [data.md](report/data.md) | 数据集说明：来源、许可、下载文件与 sha256、清洗与丢弃统计、分词器、token 数 |
 | [model.md](report/model.md) | 模型结构图（含 Block 内张量形状）、按组件的参数量统计、训练设置表 |
 | [experiments.md](report/experiments.md) | 实验 A/B/C 的结果、图表、生成样例、盲评和结论 |
+| [reproduction.md](report/reproduction.md) | 2026-11-20 在无 GPU 干净环境复现的完整步骤、实测数据、bf16 问题和改动清单 |
 
 ### defense/：答辩
 
