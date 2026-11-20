@@ -130,7 +130,8 @@ python src/check_env.py                   # 自动进入 CPU 模式：检查版�
 - 和 GPU 版的区别只有两点：PyTorch 是 CPU 构建（`=cpu*`），去掉了 `cuda-version`、`cuda-cudart-dev`、`gcc`。其余包版本相同。
 - 已在 linux-64、win-64、osx-arm64 三个平台上解析通过。Mac 需要 Apple 芯片（M1 及以后）和 macOS 12 或更新；conda-forge 的 Mac 版 PyTorch 只有 CPU 构建，代码也没有用 Apple 的 MPS 后端。
 - 代码在没有 GPU 时自动用 CPU：`train.py` 会自动关闭 `torch.compile`（CPU 上它要现场调 C++ 编译器，Mac 上通常没有，而且几乎不加速）；`sample.py`、两套界面、`demo_check.py` 都会退回 CPU。
-- 速度参考（Ryzen 5 9600X，6 核）：训练 debug 模型约 12k tok/s，完整跑完 `configs/debug.yaml`（约 2000 万 token）要 25–30 分钟，所以复现时建议加 `--max_iters 200` 之类的参数缩短；生成 s10m 约 230 tok/s、s100m 约 40 tok/s，演示和开发界面都够用。笔记本 CPU 会慢一些。
+- 速度参考：Ryzen 5 9600X（6 核，支持 AVX512-BF16）训练 debug 模型约 12k tok/s，完整跑完 `configs/debug.yaml`（约 2000 万 token）25–30 分钟；生成 s10m 约 230 tok/s、s100m 约 40 tok/s，演示和开发界面都够用。笔记本 CPU 会慢一些。
+- **CPU 上的精度坑**：配置默认 `dtype: bfloat16`。bf16 矩阵乘法在 CPU 上要靠指令集加速：支持 AVX512-BF16 的 Zen 4 等没问题；Intel 12 代以后的大小核（如 Core Ultra 5 125H）没有 AVX512/AMX，会退化成极慢的软件实现——实测 30 分钟走不完 1 步。这类机器训练时加 `--dtype float32`：实测 2.4 秒/步、约 6.3–6.5k tok/s（18 核），完整 debug 训练约 1 小时。生成、评估和测试不受影响，只有训练需要改。
 - CPU 上浮点运算的顺序和 GPU 不同，同一个 seed 生成的文字会在若干 token 后和 GPU 的记录分叉，`demo_check.py` 对此只提示不判失败。
 
 ### 7. `.gitignore`
@@ -172,6 +173,10 @@ python src/check_env.py
 - conda-forge 的 pytorch 可能装成 CPU 版：检查 `torch.cuda.is_available()`；可以显式写 `pytorch=*=cuda*` 约束构建字符串。
 - Miniconda 安装目录自带 `~/miniconda3/.condarc`，里面写了 `channels: [defaults]`，会和 `~/.condarc` 合并。用 `conda config --file ~/miniconda3/.condarc --remove channels defaults` 去掉，再用 `conda config --show-sources` 确认。
 - `torch.compile` 报 `Failed to find C compiler` 或 `cuda.h: No such file or directory`：Triton 编译 kernel 时要现场用 C 编译器编一个小的启动器（launcher），需要 `gcc` 和 CUDA 头文件。从 conda-forge 装 `gcc` 和 `cuda-cudart-dev`（注意 `cuda-driver-dev` 只有 `libcuda.so` 的 stub，没有 `cuda.h`）。
+- `curl: (6) Could not resolve host: huggingface.co`：国内网络常见，数据下载前先 `export HF_ENDPOINT=https://hf-mirror.com`。`prepare.py` 会跳过已下载的文件，可以放心重跑。
+- `conda env create` 报 `CondaValueError: prefix already exists`：环境名 `tiny-llm` 已被占用。不要直接删旧环境，可以 `conda env create -f environment-cpu.yml -n tiny-llm-repro` 建一个副本，命令里用 `conda run -n tiny-llm-repro ...` 或 `conda activate tiny-llm-repro`。
+- CPU 训练极慢、日志长时间停在 `[eval] step 0`：多半是 bf16 在不支持 AVX512-BF16 的 CPU 上走了软件实现，加 `--dtype float32`，见 6.1 节。
+- `prepare.py` 中途被 Ctrl-C：`data/processed/*.bin` 可能只写了一半，`meta.json` 还是 git 里的旧版本（`shards: all`）。直接重跑同一条命令即可，下载会跳过、编码会覆盖。
 
 ## 答辩可能被问的问题
 
@@ -211,3 +216,22 @@ python src/check_env.py
 已用锁定版本的 `environment.yml` 新建一个临时环境重新验证过，五项全部通过。
 
 2026-11-17：新增 `environment-cpu.yml`。在本机（linux-64）用它新建临时环境验证：`check_env.py` CPU 模式三项通过，`pytest tests/` 42 项通过，debug 冒烟训练、`sample.py`、`demo_check.py` 均正常；osx-arm64 和 win-64 用 `conda env create --dry-run` 解析通过（未在真机上装过）。
+
+### 2026-11-20 干净环境复现记录（无 GPU）
+
+目的：验证"另一位组员在干净环境里按 README 从头跑到 debug 模型生成"。做法：用 `git worktree` 从 `main`（`8160728`）拉一份干净副本到 `/tmp/opencode/tiny-llm-repro`，新建独立环境 `tiny-llm-repro`，不碰主仓库的 `runs/` 和 `data/`。
+
+| 项目 | 实测 |
+|---|---|
+| 机器 | WSL2，Ubuntu 26.04.1，Intel Core Ultra 5 125H（18 线程），15GB 内存，**无 NVIDIA 显卡** |
+| conda | 26.9.4；`~/miniconda3/.condarc` 去掉 `defaults` 后只剩 conda-forge（TUNA），`channel_priority: strict` |
+| 创建环境 | `conda env create -f environment-cpu.yml -n tiny-llm-repro`，**94 秒** |
+| 版本 | Python 3.12.16，torch 2.14.1（CPU 构建），tokenizers 0.23.3，huggingface_hub 1.32.0 |
+| `check_env.py` | CPU 模式三项 OK：bf16 relative error 2.88e-03；SDPA max diff 7.64e-03，causality OK |
+| `pytest tests/` | **35 passed, 7 skipped，26.95 秒**；跳过的是 `tests/test_server.py` 里需要 `runs/s10m/ckpt_best.pt` 的 7 个用例（干净副本还没有 checkpoint） |
+| 数据 | `HF_ENDPOINT=https://hf-mirror.com ... --shards 1`：下载 541MB，**3 分 36 秒**；训练集 2.54 亿 token（SmolLM 1.32 亿 + TinyStories 1.22 亿，52.06 : 47.94），验证集 549 万 |
+| debug 训练 | bf16 不可用（30 分钟走不完 1 步），改 `--dtype float32`：约 **6.5k tok/s、2.4 秒/步，1200 步训练 50.8 分钟**；整条命令 66 分钟（含 7 次评估和启动） |
+| 训练结果 | val 9.0566 → **3.9930**（SmolLM 5.0968 / TinyStories 2.7944），train 3.9466；`log.csv` 和 `loss_curve.png` 正常生成 |
+| 生成 | `sample.py --run runs/repro_debug --prompt "Once upon a time" --max_new_tokens 80 --seed 42`：0.35 秒、**230 tok/s**，输出是连贯的英文故事片段 |
+
+结论：README 的 CPU 路径可以从零跑通。过程中发现、并已补进上文的问题：Miniconda 自带的 `.condarc` 残留 `defaults`；`huggingface.co` DNS 解析失败，要改用 `hf-mirror.com`；没有 AVX512-BF16 的 CPU 上 bf16 训练不可用；干净副本里 pytest 是 35 passed / 7 skipped，不是全过。复现用的 worktree 和 conda 环境是临时的，验证完可以删除。

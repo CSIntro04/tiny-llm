@@ -46,6 +46,16 @@ python app/server.py --preload all
 
 开发机：RTX 5060 Ti 8GB（WSL2）；正式训练：云端 RTX 5090 32GB。两者都是 Blackwell（sm_120），**必须 PyTorch ≥ 2.7、CUDA ≥ 12.8**。
 
+装之前先确认三件事（2026-11-20 在一台干净的 Linux 机器上从头复现时踩过坑）：
+
+```bash
+conda env list                # 已有同名 tiny-llm 时 conda env create 会直接失败：先换环境名或删旧环境
+conda config --show-sources   # 要看的两个位置：~/.condarc 和 ~/miniconda3/.condarc（Miniconda 自带的会合并进来）
+df -h .                       # 全量数据 + 训练输出，至少留 12GB
+```
+
+如果输出里还有 `defaults` 频道，按 [docs/design/01-environment.md 第 1 节](docs/design/01-environment.md) 去掉：`defaults` 和 `conda-forge` 混装容易出现 ABI 冲突，求解也会变慢。
+
 1. 安装 Miniconda（安装包可从 TUNA 镜像 `https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/` 下载）。
 2. 把 conda 和 pip 指向清华 TUNA 镜像。`~/.condarc`：
 
@@ -73,20 +83,37 @@ python app/server.py --preload all
    python src/check_env.py                 # 检查 GPU、bf16、SDPA、torch.compile
    ```
 
+   在新机器上只走 conda-forge（TUNA 镜像）实测：环境创建 **94 秒**，`check_env.py` 全部通过（2026-11-20，18 核 CPU）。
+
 详见 [docs/design/01-environment.md](docs/design/01-environment.md)。原生 Windows 上把配置里的 `compile` 设成 `false`。
 
 **没有 NVIDIA 显卡（MacBook、无独显电脑）**：第 3 步改用 `conda env create -f environment-cpu.yml`（CPU 版 PyTorch，环境名同样是 `tiny-llm`），其余命令不变。`check_env.py` 会自动按 CPU 模式检查，训练时自动关闭 `torch.compile`。CPU 适合跑界面、生成、测试和 debug 模型，正式规模的训练还是要用 GPU。Mac 需要 Apple 芯片和 macOS 12+。详见 [01-environment.md 第 6.1 节](docs/design/01-environment.md)。
+
+**CPU 上训练要加 `--dtype float32`**：配置默认 `dtype: bfloat16`，GPU 上没问题，但 CPU 要把 bf16 矩阵乘法交给硬件。支持 AVX512-BF16 的 CPU（Zen 4 等）可以直接跑；Intel 12 代以后的大小核（如 Core Ultra）没有 AVX512/AMX，bf16 会退化到极慢的软件实现——实测 30 分钟走不完 1 步，改成 fp32 后 2.4 秒/步（约 6.3k tok/s）。所以纯 CPU 复现用：
+
+```bash
+python src/train.py --config configs/debug.yaml --name my_debug --dtype float32
+```
 
 ## 2. 数据
 
 ```bash
 # 全量：下载约 3.5GB parquet，清洗、切验证集、训练 BPE-8192、编码成 uint16 的 .bin
 python src/prepare.py --datasets smollm,tinystories --tokenizer bpe --vocab_size 8192 --shards all
-# 快速版：每个来源只下 1 个分片（约 0.57GB，3 分钟左右），够跑 debug 模型
+# 快速版：每个来源只下 1 个分片（约 0.57GB，3–4 分钟），够跑 debug 模型
 python src/prepare.py --datasets smollm,tinystories --tokenizer bpe --vocab_size 8192 --shards 1
 ```
 
+如果 `huggingface.co` 连不上（国内网络下 DNS 解析失败是常见现象），先设镜像再跑同一条命令：
+
+```bash
+export HF_ENDPOINT=https://hf-mirror.com
+```
+
+下载会跳过已存在的文件，中断后重跑即可续上；但 `meta.json`、`tokenizer.json` 会重新生成（这两个文件在 git 里，建议在副本里跑，别覆盖主仓库的统计）。
+
 - 需要至少 12GB 磁盘空间。全量用时约 25 分钟（编码约 13 分钟，6 核 CPU；下载看网速）。
+- `--shards 1` 实测（2026-11-20，18 核 CPU）：下载 541MB，整条命令 **3 分 36 秒**（训练 BPE 58 秒 + 编码约 1 分半）；得到训练集 **2.54 亿 token**（SmolLM 1.32 亿 + TinyStories 1.22 亿，自然比例 52.1 : 47.9），验证集 549 万 token。debug 模型只训练约 2000 万 token，这个规模足够。
 - 输出在 `data/processed/`：`{smollm,tinystories}_{train,val}.bin`、`meta.json`、`tokenizer.json`（后两个已经在 git 里）。
 - 全量统计：训练集 16.3 亿 token（SmolLM 11.46 亿 + TinyStories 4.85 亿，自然比例约 70:30），验证集 1054 万 token。
 
@@ -112,6 +139,7 @@ python src/train.py --config configs/s100m.yaml --resume                       #
 - 配置里的任何键都可以用 `--键 值` 覆盖（如 `--max_iters`、`--lr`、`--name`）。覆盖 batch 时保持 `batch_size × grad_accum = 256`，有效 batch 就和正式训练相同（131072 token/步）。
 - 输出在 `runs/<name>/`：`config.yaml`（完整配置副本）、`log.csv`（step、train/val loss、学习率、tok/s、显存）、`loss_curve.png`、`ckpt_last.pt`、`ckpt_best.pt`、`ckpt_tok{100,300,1000}M.pt`。
 - 本地 5060 Ti 上 s10m 约 18 分钟、s50m 约 3.6 小时、s100m 约 9 小时（冒烟实测吞吐估算）。
+- 纯 CPU（18 核，`--dtype float32`）跑完整 debug 1200 步：训练 **50.8 分钟**，整条命令约 66 分钟（含 7 次评估和启动开销）；val loss 从 9.06 降到 **3.99**。不加 `--dtype float32` 会卡在 bf16，见第 1 节说明。
 
 ## 4. 下载训练好的模型（不想自己训练）
 
@@ -132,6 +160,12 @@ python src/sample.py --run runs/s100m --ckpt ckpt_tok300M.pt --prompt "Once upon
 ```
 
 `--temperature 0` 是 greedy；`--top_k 0` 表示不限制。
+
+没有 GPU 时自动用 CPU（默认的 `--device cuda` 检测不到显卡会退回 cpu）：debug 模型生成 80 个 token 实测 0.35 秒（**230 tok/s**，18 核 CPU）。刚训练完可以直接试：
+
+```bash
+python src/sample.py --run runs/repro_debug --prompt "Once upon a time" --max_new_tokens 80 --seed 42
+```
 
 ## 6. 交互界面
 
@@ -174,6 +208,8 @@ python app/app.py --preload all      # 备用：Gradio 版界面，功能相同�
 pytest tests/        # 数据、模型（形状/因果性/注意力等价/权重共享/过拟合）、训练、采样、评估、导出
 python src/model.py  # 打印四档配置的参数量（按组件拆分）
 ```
+
+在干净副本里（还没有 checkpoint）预期 **35 passed, 7 skipped**：跳过的是 `tests/test_server.py` 里需要 `runs/s10m/ckpt_best.pt` 的 7 个用例；按第 4 节下载权重或自己训练后再跑就会全部执行。实测约 27 秒（18 核 CPU）。
 
 ## 目录结构
 
