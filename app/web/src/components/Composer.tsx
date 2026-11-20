@@ -1,6 +1,8 @@
-// 输入框：prompt 文本 + 右下角生成 / 停止按钮；下面一排示例 prompt
-import { ArrowUp, Square } from "lucide-react"
+// 提示词输入区：基于标准 shadcn/ui Card + Button 构建
+import { ArrowUp, Square, X } from "lucide-react"
 
+import { Button } from "@/components/ui/button"
+import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 
 type Props = {
@@ -16,35 +18,68 @@ type Props = {
 
 export function Composer({ value, onChange, onSubmit, onStop, running, examples, submitLabel = "生成", rows = 2 }: Props) {
   return (
-    <div className="space-y-2">
-      <div className="bg-surface shadow-card focus-within:shadow-[0_0_0_1px_var(--line-strong),0_6px_18px_oklch(0_0_0/0.05)] rounded-[10px] transition-shadow duration-200">
-        <textarea value={value} rows={rows} onChange={(e) => onChange(e.target.value)}
-          placeholder="输入英文开头，例如 Once upon a time"
-          onKeyDown={(e) => {
-            // Enter 生成，Shift+Enter 换行
-            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!running) onSubmit() }
-          }}
-          className="text-ink placeholder:text-ink-3 block w-full resize-none bg-transparent px-3.5 pt-3 text-[14px] leading-relaxed outline-none" />
-        <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5">
-          <span className="text-ink-3 pl-1 text-[11px]">Enter 生成 · Shift+Enter 换行</span>
-          <button type="button" onClick={running ? onStop : onSubmit} disabled={!running && !value.trim()}
-            className={cn(
-              "flex h-7 items-center gap-1.5 rounded-full pr-3 pl-2.5 text-[12px] font-medium transition-[background-color,transform,opacity] duration-150 active:scale-[0.96] disabled:opacity-40",
-              running ? "bg-field text-ink shadow-btn hover:bg-hover" : "bg-ink text-page hover:opacity-90",
-            )}>
+    <div className="space-y-3">
+      <Card className="focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20 transition-shadow">
+        <div className="relative">
+          <textarea
+            value={value}
+            rows={rows}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="输入英文开头，例如 Once upon a time"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault()
+                if (!running && value.trim()) onSubmit()
+              }
+            }}
+            className="typo-editorial text-ink placeholder:text-muted-foreground block w-full resize-none bg-transparent pt-4 pr-11 pl-4 text-[17px] leading-relaxed outline-none placeholder:italic"
+          />
+          {value && !running && (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() => onChange("")}
+              title="清空输入"
+              className="absolute top-3.5 right-3.5 size-7"
+            >
+              <X className="size-3.5" />
+            </Button>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-3 px-4 pt-1.5 pb-3.5">
+          <span className="text-muted-foreground text-[12px]">Enter 生成 · Shift+Enter 换行</span>
+          <Button
+            variant={running ? "destructive" : "default"}
+            size="sm"
+            onClick={running ? onStop : onSubmit}
+            disabled={!running && !value.trim()}
+            className="h-8.5 px-4"
+          >
             {running ? <Square className="size-3 fill-current" /> : <ArrowUp className="size-3.5" />}
             {running ? "停止" : submitLabel}
-          </button>
+          </Button>
         </div>
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        {examples.map((ex) => (
-          <button key={ex} type="button" onClick={() => onChange(ex)}
-            className="bg-surface text-ink-2 shadow-btn hover:bg-hover hover:text-ink h-6 rounded-full px-2.5 text-[11.5px] transition-[background-color,color,transform] duration-150 active:scale-[0.96]">
-            {ex}
-          </button>
-        ))}
-      </div>
+      </Card>
+
+      {examples.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {examples.map((ex) => {
+            const selected = value.trim() === ex
+            return (
+              <Button
+                key={ex}
+                variant={selected ? "default" : "outline"}
+                size="sm"
+                onClick={() => onChange(ex)}
+                className={cn("h-7.5 px-3 text-[12px]", !selected && "font-normal")}
+              >
+                {ex}
+              </Button>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
