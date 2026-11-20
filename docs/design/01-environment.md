@@ -234,4 +234,4 @@ python src/check_env.py
 | 训练结果 | val 9.0566 → **3.9930**（SmolLM 5.0968 / TinyStories 2.7944），train 3.9466；`log.csv` 和 `loss_curve.png` 正常生成 |
 | 生成 | `sample.py --run runs/repro_debug --prompt "Once upon a time" --max_new_tokens 80 --seed 42`：0.35 秒、**230 tok/s**，输出是连贯的英文故事片段 |
 
-结论：README 的 CPU 路径可以从零跑通。过程中发现、并已补进上文的问题：Miniconda 自带的 `.condarc` 残留 `defaults`；`huggingface.co` DNS 解析失败，要改用 `hf-mirror.com`；没有 AVX512-BF16 的 CPU 上 bf16 训练不可用；干净副本里 pytest 是 35 passed / 7 skipped，不是全过。复现用的 worktree 和 conda 环境是临时的，验证完可以删除。
+结论：README 的 CPU 路径可以从零跑通。过程中发现、并已补进上文的问题：Miniconda 自带的 `.condarc` 残留 `defaults`；`huggingface.co` DNS 解析失败，要改用 `hf-mirror.com`；没有 AVX512-BF16 的 CPU 上 bf16 训练不可用；干净副本里 pytest 是 35 passed / 7 skipped，不是全过。复现用的 worktree 和 conda 环境是临时的，验证完可以删除。完整命令、逐步日志和验证集 loss 曲线见 [report/reproduction.md](../report/reproduction.md)。
