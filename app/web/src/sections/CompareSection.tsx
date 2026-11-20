@@ -168,6 +168,9 @@ export function CompareSection({ index, examples }: { index: number; examples: s
     }).catch(console.error)
   }, [])
 
+  // 卸载时中止可能仍在进行的流式生成，避免后台继续占用 GPU
+  useEffect(() => () => abort.current?.abort(), [])
+
   // 用 ResizeObserver 实时测量当前最前卡的真实内容高度，平滑驱动外层舞台高度，彻底消除位置跳变
   useLayoutEffect(() => {
     const el = contentRefs.current[activeIdx]

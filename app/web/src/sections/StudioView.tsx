@@ -202,9 +202,14 @@ export function StudioView({
   const handleSelectRecord = (rec: ManuscriptRecord) => {
     abort.current?.abort()
     setActiveRecordId(rec.id)
-    setCkpt(rec.ckpt)
+    // 若历史记录里的权重已从当前列表移除，自动回退到当前有效权重，避免下拉框显示无效值
+    const validCkpt = ckpts?.items.includes(rec.ckpt)
+      ? rec.ckpt
+      : (ckpts?.default ?? ckpts?.items[0] ?? ckpt)
+    setCkpt(validCkpt)
     setPrompt(rec.prompt)
-    setParams(rec.params)
+    // 恢复实际生效的随机种子（rec.seed），以便再次生成可精确复现同一段输出
+    setParams({ ...rec.params, seed: rec.seed })
     const doneObj = { seed: rec.seed, n_tokens: rec.nTokens, seconds: rec.seconds, tok_s: rec.tokS }
     lastSavedDone.current = doneObj
     setOut({

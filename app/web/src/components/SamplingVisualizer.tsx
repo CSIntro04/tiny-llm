@@ -5,6 +5,7 @@ import { useMemo } from "react"
 import type { SamplingParams } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 // 模拟模型在 "Once upon a time, there was a ___" 处输出的 8 个典型候选词原始 logit
@@ -146,7 +147,17 @@ export function SamplingVisualizer({
   return (
     <Card className={cn("p-3.5", className)}>
       <div className="mb-2.5 flex shrink-0 items-center justify-between gap-2">
-        <span className="text-ink-2 text-[11.5px] font-medium">Next-Token 概率分布示意</span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="text-ink-2 inline-flex cursor-help items-baseline gap-1.5 text-[11.5px] font-medium">
+              <span>Next-Token 概率分布</span>
+              <span className="text-muted-foreground text-[10px] font-normal">模拟示意</span>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="left" className="max-w-64">
+            基于模拟候选词 logit 实时演示 Temperature → Softmax → Top-k（示意映射）→ Top-p → 重归一化的截断顺序，非真实 8192 词表分布。
+          </TooltipContent>
+        </Tooltip>
         <Badge variant="secondary" className="typo-num text-brand px-1.5 py-0 text-[10.5px]">
           {keptCount} / {bars.length} 保留
         </Badge>
