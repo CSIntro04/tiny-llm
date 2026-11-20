@@ -103,7 +103,14 @@ function useTheme(): [Theme, (t: Theme, originEl?: HTMLElement | null) => void] 
 export default function App() {
   const [theme, setTheme] = useTheme()
   const themeToggleRef = useRef<HTMLDivElement>(null)
-  const [introState, setIntroState] = useState<"open" | "exiting" | "closed">("open")
+  // 同一次浏览器会话只自动播放一次开场动画（点击右上角重播按钮仍可随时观看）
+  const [introState, setIntroState] = useState<"open" | "exiting" | "closed">(() => {
+    try {
+      return sessionStorage.getItem("tiny-llm-intro-seen") === "1" ? "closed" : "open"
+    } catch {
+      return "open"
+    }
+  })
   const [mode, setMode] = useState<AppMode>("studio")
   const [ckpts, setCkpts] = useState<Checkpoints | null>(null)
   const [error, setError] = useState("")
@@ -126,7 +133,10 @@ export default function App() {
       {introState !== "closed" && (
         <IntroSplash
           onStartExit={() => setIntroState("exiting")}
-          onDone={() => setIntroState("closed")}
+          onDone={() => {
+            try { sessionStorage.setItem("tiny-llm-intro-seen", "1") } catch { /* 忽略 */ }
+            setIntroState("closed")
+          }}
         />
       )}
 
@@ -256,11 +266,9 @@ export default function App() {
             />
           </div>
 
-          {mode === "compare" && (
-            <div className="apple-scroll min-h-0 flex-1 overflow-y-auto">
-              <CompareSection index={0} examples={ckpts?.examples ?? []} />
-            </div>
-          )}
+          <div className={cn("apple-scroll min-h-0 flex-1 overflow-y-auto", mode === "compare" ? "block" : "hidden")}>
+            <CompareSection index={0} examples={ckpts?.examples ?? []} />
+          </div>
 
           {mode === "lab" && <LabView />}
         </main>
