@@ -103,23 +103,49 @@ def sample_next(logits: torch.Tensor, temperature: float,
     return torch.multinomial(probs, num_samples=1)  # (B, 1)
 
 
+def _cache_len(caches: list[tuple[torch.Tensor, torch.Tensor] | None] | None) -> int:
+    """当前 cache 已覆盖多少个 token；还没开始缓存时返回 0。"""
+    return 0 if caches is None or caches[0] is None else caches[0][0].size(2)
+
+
+def _cached_logits(model: GPT, idx: torch.Tensor,
+                   caches: list[tuple[torch.Tensor, torch.Tensor] | None] | None
+                   ) -> tuple[torch.Tensor, list[tuple[torch.Tensor, torch.Tensor]]]:
+    """返回 (最后一个位置的 logits (B,1,V), 新 cache)。
+
+    首轮或上下文窗口已满时，直接 prefill 完整窗口并复用其最后位置 logits；
+    否则只把上一轮刚采出的新 token 送进 cached decode 一次。
+    """
+    block_size = model.cfg.block_size
+    if caches is None or _cache_len(caches) >= block_size:
+        # prefill：位置从 0 开始，cache 覆盖完整窗口
+        return model.forward_cached(idx[:, -block_size:], [None] * model.cfg.n_layer)
+    # decode：cache 已覆盖 idx[:-1]，只喂 idx[-1] 这一个新 token
+    return model.forward_cached(idx[:, -1:], caches)
+
+
 @torch.no_grad()
 def generate(model: GPT, idx: torch.Tensor, max_new_tokens: int,
              temperature: float = 1.0, top_k: int | None = None,
-             top_p: float | None = None, eot_id: int | None = None) -> torch.Tensor:
+             top_p: float | None = None, eot_id: int | None = None,
+             use_cache: bool = True) -> torch.Tensor:
     """idx: (B, T0) -> (B, T0 + 新生成长度)。
 
     自回归：每一步把刚生成的 token 接到输入末尾，再预测下一个。
     给了 eot_id 时，batch 里每一行都生成过 eot 就提前停止（各行在 eot 之后的内容由调用方截掉）。
+    use_cache=True 时复用每层 K/V；False 时每步重算完整前缀（用于对比和测试）。
     """
     block_size = model.cfg.block_size
     use_bf16 = idx.is_cuda
     done = torch.zeros(idx.size(0), dtype=torch.bool, device=idx.device)  # (B,)
+    caches = None
     for _ in range(max_new_tokens):
-        # 位置编码只有 block_size 个，超出的部分只保留最后 block_size 个 token
-        idx_cond = idx[:, -block_size:]  # (B, ≤block_size)
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=use_bf16):
-            logits, _ = model(idx_cond)  # 不传 targets：只算最后一个位置，(B, 1, V)
+            if use_cache:
+                logits, caches = _cached_logits(model, idx, caches)
+            else:
+                # 位置编码只有 block_size 个，超出的部分只保留最后 block_size 个 token
+                logits, _ = model(idx[:, -block_size:])  # (B, 1, V)
         logits = logits[:, -1, :].float()  # (B, V)；转回 fp32 再做 softmax，精度更稳
         next_id = sample_next(logits, temperature, top_k, top_p)  # (B, 1)
         idx = torch.cat([idx, next_id], dim=1)  # (B, T+1)
@@ -133,7 +159,8 @@ def generate(model: GPT, idx: torch.Tensor, max_new_tokens: int,
 def generate_text(model: GPT, tok: Tokenizer, prompt: str, num_samples: int = 1,
                   max_new_tokens: int = 200, temperature: float = 0.8,
                   top_k: int | None = 50, top_p: float | None = None,
-                  seed: int | None = None, stop_at_eot: bool = True) -> list[str]:
+                  seed: int | None = None, stop_at_eot: bool = True,
+                  use_cache: bool = True) -> list[str]:
     """返回 num_samples 条续写文本（不含 prompt）。遇到 <|endoftext|> 就截断在它之前。"""
     if seed is not None:
         set_seed(seed)
@@ -142,7 +169,7 @@ def generate_text(model: GPT, tok: Tokenizer, prompt: str, num_samples: int = 1,
     ids = tok.encode(prompt) if prompt else [tok.eot_id]
     idx = torch.tensor([ids] * num_samples, dtype=torch.long, device=device)  # (N, T0)
     out = generate(model, idx, max_new_tokens, temperature, top_k, top_p,
-                   eot_id=tok.eot_id if stop_at_eot else None)
+                   eot_id=tok.eot_id if stop_at_eot else None, use_cache=use_cache)
     texts = []
     for row in out[:, len(ids):].tolist():  # 只取新生成的部分
         if stop_at_eot and tok.eot_id in row:
@@ -154,7 +181,7 @@ def generate_text(model: GPT, tok: Tokenizer, prompt: str, num_samples: int = 1,
 @torch.no_grad()
 def generate_stream(model: GPT, tok: Tokenizer, prompt: str, max_new_tokens: int = 200,
                     temperature: float = 0.8, top_k: int | None = 50, top_p: float | None = None,
-                    seed: int | None = None) -> Iterator[str]:
+                    seed: int | None = None, use_cache: bool = True) -> Iterator[str]:
     """流式生成（给网页界面用）：每生成一个 token 就 yield 新增的那段文本。
 
     循环和 generate() 一样（B=1），随机数调用顺序也一样，所以同一个 seed 的结果与 generate_text() 相同。
@@ -167,10 +194,13 @@ def generate_stream(model: GPT, tok: Tokenizer, prompt: str, max_new_tokens: int
     idx = torch.tensor([tok.encode(prompt) if prompt else [tok.eot_id]], dtype=torch.long, device=device)
     new_ids: list[int] = []
     sent = ""  # 已经发给前端的文本
+    caches = None
     for _ in range(max_new_tokens):
-        idx_cond = idx[:, -model.cfg.block_size:]  # (1, ≤block_size)
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=idx.is_cuda):
-            logits, _ = model(idx_cond)  # (1, 1, V)
+            if use_cache:
+                logits, caches = _cached_logits(model, idx, caches)  # (1, 1, V)
+            else:
+                logits, _ = model(idx[:, -model.cfg.block_size:])  # (1, 1, V)
         next_id = sample_next(logits[:, -1, :].float(), temperature, top_k, top_p)  # (1, 1)
         if next_id.item() == tok.eot_id:  # 文档结束符：停止，不输出它
             break
@@ -201,6 +231,8 @@ def main() -> None:
     p.add_argument("--num_samples", type=int, default=1)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--device", default="cuda")
+    p.add_argument("--no_cache", action="store_true",
+                   help="关闭 KV cache，每步重算完整前缀（用于对比生成速度）")
     args = p.parse_args()
 
     model, tok, _ = load_model(args.run, args.ckpt, args.device)
@@ -208,7 +240,8 @@ def main() -> None:
 
     t0 = time.time()
     texts = generate_text(model, tok, args.prompt, args.num_samples, args.max_new_tokens,
-                          args.temperature, args.top_k or None, args.top_p, args.seed)
+                          args.temperature, args.top_k or None, args.top_p, args.seed,
+                          use_cache=not args.no_cache)
     dt = time.time() - t0
 
     n_tokens = 0

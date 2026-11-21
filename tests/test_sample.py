@@ -74,3 +74,39 @@ def test_stops_at_eot(model: GPT) -> None:
     first = int(generate(model, idx, 1, temperature=0)[0, -1])  # greedy 的第一个 token 当作 eot
     out = generate(model, idx, 50, temperature=0, eot_id=first)
     assert out.shape == (1, 5)
+
+
+@pytest.mark.parametrize("t0", [1, 8])
+def test_generate_cache_matches_no_cache(model: GPT, t0: int) -> None:
+    """有/无 KV cache 的 greedy 输出必须逐 token 相同；t0=1 覆盖单 token prompt。"""
+    idx = torch.randint(0, V, (2, t0))
+    no_cache = generate(model, idx, 20, temperature=0, use_cache=False)
+    cached = generate(model, idx, 20, temperature=0, use_cache=True)
+    assert torch.equal(no_cache, cached)
+
+
+def test_generate_cache_long_prompt(model: GPT) -> None:
+    """prompt 超过 block_size=32：cache 要重建窗口，结果仍与无 cache 一致。"""
+    idx = torch.randint(0, V, (1, 100))
+    no_cache = generate(model, idx, 20, temperature=0, use_cache=False)
+    cached = generate(model, idx, 20, temperature=0, use_cache=True)
+    assert cached.shape == (1, 120)
+    assert torch.equal(no_cache, cached)
+
+
+def test_generate_cache_batch_stops_at_eot(model: GPT) -> None:
+    """B>1 且提前遇到 eot 时，cache 和 no-cache 的停止位置一致。"""
+    idx = torch.randint(0, V, (3, 4))
+    first = int(generate(model, idx, 1, temperature=0)[0, -1])
+    no_cache = generate(model, idx, 30, temperature=0, eot_id=first, use_cache=False)
+    cached = generate(model, idx, 30, temperature=0, eot_id=first, use_cache=True)
+    assert torch.equal(no_cache, cached)
+
+
+def test_same_seed_same_output_with_cache(model: GPT) -> None:
+    idx = torch.randint(0, V, (2, 4))
+    torch.manual_seed(42)
+    a = generate(model, idx, 20, temperature=1.0, top_k=50, top_p=0.9, use_cache=True)
+    torch.manual_seed(42)
+    b = generate(model, idx, 20, temperature=1.0, top_k=50, top_p=0.9, use_cache=True)
+    assert torch.equal(a, b)
