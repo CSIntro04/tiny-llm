@@ -73,6 +73,50 @@ def test_manual_attn_matches_sdpa() -> None:
     assert torch.allclose(a, b, atol=1e-5)
 
 
+def test_forward_cached_matches_full() -> None:
+    """首 token prefill，之后逐个 decode；每个位置都应和完整前向的最后一个 logits 一致。"""
+    torch.manual_seed(0)
+    model = GPT(_small_cfg()).eval()
+    idx = torch.randint(0, V, (2, 20))
+    caches: list = [None] * model.cfg.n_layer
+    with torch.no_grad():
+        logits, caches = model.forward_cached(idx[:, :1], caches)  # prefill 第 0 个 token
+        ref, _ = model(idx[:, :1])
+        assert torch.allclose(logits, ref, atol=1e-5)
+        for t in range(1, idx.size(1)):
+            logits, caches = model.forward_cached(idx[:, t:t + 1], caches)
+            ref, _ = model(idx[:, :t + 1])
+            assert torch.allclose(logits, ref, atol=1e-5), f"位置 {t} 不一致"
+    hs = model.cfg.n_embd // model.cfg.n_head
+    assert caches[0][0].shape == (2, model.cfg.n_head, idx.size(1), hs)
+
+
+@pytest.mark.parametrize("manual", [False, True])
+def test_forward_cached_chunk_mask(manual: bool) -> None:
+    """带 cache 一次输入多个 token：显式因果掩码必须和完整前向一致。"""
+    torch.manual_seed(0)
+    model = GPT(_small_cfg(manual_attn=manual)).eval()
+    idx = torch.randint(0, V, (2, 24))
+    prefix, chunk = 10, 6
+    with torch.no_grad():
+        _, caches = model.forward_cached(idx[:, :prefix], [None] * model.cfg.n_layer)
+        logits, _ = model.forward_cached(idx[:, prefix:prefix + chunk], caches)
+        ref, _ = model(idx[:, :prefix + chunk])
+    assert torch.allclose(logits, ref, atol=1e-5)
+
+
+def test_forward_cached_single_token() -> None:
+    """单 token prompt 不能走空的 prefill；这一条锁住边界。"""
+    torch.manual_seed(0)
+    model = GPT(_small_cfg()).eval()
+    idx = torch.randint(0, V, (1, 1))
+    with torch.no_grad():
+        logits, caches = model.forward_cached(idx, [None] * model.cfg.n_layer)
+        ref, _ = model(idx)
+    assert torch.allclose(logits, ref, atol=1e-5)
+    assert caches[0][0].size(2) == 1
+
+
 @pytest.mark.parametrize("manual", [False, True])
 def test_causality(manual: bool) -> None:
     """修改位置 t 之后的 token，位置 0..t 的 logits 不应改变。"""

@@ -5,6 +5,8 @@
 
 记号：B = batch 大小，T = 序列长度，C = n_embd，nh = n_head，hs = C // nh，V = vocab_size。
 
+推理时用 `GPT.forward_cached` 复用每层已经算过的 k/v（KV cache），训练仍然走 `GPT.forward`。
+
 运行 `python src/model.py` 打印四档预设的参数量和资源粗估。
 """
 
@@ -63,36 +65,78 @@ class CausalSelfAttention(nn.Module):
         self.register_buffer("mask", mask.view(1, 1, cfg.block_size, cfg.block_size),
                              persistent=False)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def _split_heads(self, x: torch.Tensor) -> torch.Tensor:
+        """(B, T, C) -> (B, nh, T, hs)：把 nh 移到前面，后面的矩阵乘法对每个头独立进行。"""
         B, T, C = x.shape
-        nh, hs = self.n_head, C // self.n_head
+        return x.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
 
-        q, k, v = self.c_attn(x).split(C, dim=2)  # (B, T, 3C) -> 3 个 (B, T, C)
-        # 拆成多头：(B, T, C) -> (B, T, nh, hs) -> (B, nh, T, hs)
-        # 把 nh 移到前面，后面的矩阵乘法就对每个头独立进行
-        q = q.view(B, T, nh, hs).transpose(1, 2)
-        k = k.view(B, T, nh, hs).transpose(1, 2)
-        v = v.view(B, T, nh, hs).transpose(1, 2)
+    def _attend(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
+                past_len: int) -> torch.Tensor:
+        """q: (B, nh, T, hs)，k/v: (B, nh, past_len+T, hs) -> (B, nh, T, hs)。"""
+        _, nh, T, hs = q.shape
 
         if self.manual_attn:
-            # 打分：(B, nh, T, hs) @ (B, nh, hs, T) -> (B, nh, T, T)，第 i 行 = 位置 i 对各位置的打分
+            # 打分：(B, nh, T, hs) @ (B, nh, hs, past+T) -> (B, nh, T, past+T)
             # 除以 sqrt(hs)：点积的方差随 hs 增大，不缩放会让 softmax 过尖、梯度消失
             att = (q @ k.transpose(-2, -1)) / math.sqrt(hs)
-            # 因果掩码：位置 i 只能看 j <= i，未来位置设为 -inf，softmax 后权重为 0
-            att = att.masked_fill(~self.mask[:, :, :T, :T], float("-inf"))
+            # 因果掩码按 query 的绝对位置切片：位置 past_len+i 只能看 key 列 0..past_len+i
+            att = att.masked_fill(
+                ~self.mask[:, :, past_len:past_len + T, :past_len + T], float("-inf")
+            )
             att = F.softmax(att, dim=-1)  # 每行变成和为 1 的权重
             att = self.attn_dropout(att)
-            y = att @ v  # (B, nh, T, T) @ (B, nh, T, hs) -> (B, nh, T, hs)
-        else:
-            # 数学上与上面等价；自动选 FlashAttention 等内核，不显式构造 T×T 矩阵，省显存
-            y = F.scaled_dot_product_attention(
-                q, k, v, is_causal=True, dropout_p=self.dropout if self.training else 0.0
-            )
+            return att @ v  # (B, nh, T, past+T) @ (B, nh, past+T, hs)
 
+        dropout_p = self.dropout if self.training else 0.0
+        if past_len == 0:
+            # prefill / 普通前向：query 和 key 长度相同，可以直接用因果模式
+            return F.scaled_dot_product_attention(
+                q, k, v, is_causal=True, dropout_p=dropout_p
+            )
+        if T == 1:
+            # 标准 decode：cache 里全是过去，没有未来 key，不需要掩码
+            return F.scaled_dot_product_attention(
+                q, k, v, is_causal=False, dropout_p=dropout_p
+            )
+        # 带 cache 一次输入多个 token：SDPA 的 is_causal 从左上角对齐会错位，
+        # 所以显式传切片后的布尔掩码（True = 参与注意力）
+        causal = self.mask[0, 0, past_len:past_len + T, :past_len + T]
+        return F.scaled_dot_product_attention(
+            q, k, v, attn_mask=causal, is_causal=False, dropout_p=dropout_p
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B, T, C = x.shape
+        q, k, v = self.c_attn(x).split(C, dim=2)  # (B, T, 3C) -> 3 个 (B, T, C)
+        q, k, v = self._split_heads(q), self._split_heads(k), self._split_heads(v)
+        y = self._attend(q, k, v, past_len=0)
         # 合并多头：(B, nh, T, hs) -> (B, T, nh, hs) -> (B, T, C)
         # transpose 后内存不连续，view 之前必须 contiguous()
         y = y.transpose(1, 2).contiguous().view(B, T, C)
         return self.resid_dropout(self.c_proj(y))
+
+    def forward_cached(self, x: torch.Tensor,
+                       past_kv: tuple[torch.Tensor, torch.Tensor] | None = None
+                       ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+        """带 KV cache 的注意力：x 是新 token，past_kv 是之前算过的 (k, v)。
+
+        past_kv=None 表示 prefill；返回 (y, (k_all, v_all))，k/v 形状 (B, nh, past+T, hs)。
+        训练仍然走 forward()，这个接口只用于推理。
+        """
+        B, T, C = x.shape
+        q, k, v = self.c_attn(x).split(C, dim=2)
+        q, k, v = self._split_heads(q), self._split_heads(k), self._split_heads(v)
+
+        past_len = 0 if past_kv is None else past_kv[0].size(2)
+        if past_kv is not None:
+            k_all = torch.cat([past_kv[0], k], dim=2)  # (B, nh, past+T, hs)
+            v_all = torch.cat([past_kv[1], v], dim=2)
+        else:
+            k_all, v_all = k, v
+
+        y = self._attend(q, k_all, v_all, past_len)
+        y = y.transpose(1, 2).contiguous().view(B, T, C)
+        return self.resid_dropout(self.c_proj(y)), (k_all, v_all)
 
 
 class MLP(nn.Module):
@@ -125,6 +169,15 @@ class Block(nn.Module):
         x = x + self.attn(self.ln_1(x))
         x = x + self.mlp(self.ln_2(x))
         return x
+
+    def forward_cached(self, x: torch.Tensor,
+                       past_kv: tuple[torch.Tensor, torch.Tensor] | None = None
+                       ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+        """缓存版 Block：只对当前 x（通常是 1 个新 token）做 MLP，并把新的 k/v 返回。"""
+        a, present = self.attn.forward_cached(self.ln_1(x), past_kv)
+        x = x + a
+        x = x + self.mlp(self.ln_2(x))
+        return x, present
 
 
 class GPT(nn.Module):
@@ -186,6 +239,36 @@ class GPT(nn.Module):
         # 推理时只需要最后一个位置的预测，省掉 T-1 个位置的 lm_head 计算
         logits = self.lm_head(x[:, [-1], :])  # (B, 1, V)；用 [-1] 保留 T 维
         return logits, None
+
+    def forward_cached(
+        self, idx: torch.Tensor,
+        caches: list[tuple[torch.Tensor, torch.Tensor] | None],
+    ) -> tuple[torch.Tensor, list[tuple[torch.Tensor, torch.Tensor]]]:
+        """带 KV cache 的推理前向：idx 是本次新输入的 token，返回 (logits, new_caches)。
+
+        caches 长度等于 n_layer，每项是 None（该层还没有缓存）或 (k, v)。
+        首轮 prefill 传 [None] * n_layer；之后每次只传 1 个新 token 和上一轮的 cache。
+        cache 里的 k/v 形状是 (B, nh, past_len, hs)，位置编码从 past_len 开始。
+        """
+        B, T = idx.shape
+        assert T >= 1, "带 KV cache 的前向至少需要 1 个 token"
+        assert len(caches) == len(self.blocks), "caches 长度必须等于层数"
+        past_len = 0 if caches[0] is None else caches[0][0].size(2)
+        assert past_len + T <= self.cfg.block_size, (
+            f"位置 {past_len + T} 超过 block_size {self.cfg.block_size}"
+        )
+        pos = torch.arange(past_len, past_len + T, device=idx.device)  # (T,)
+
+        # (B, T, C) + (T, C) 广播 -> (B, T, C)
+        x = self.drop(self.wte(idx) + self.wpe(pos))
+        new_caches: list[tuple[torch.Tensor, torch.Tensor]] = []
+        for block, past_kv in zip(self.blocks, caches):
+            x, present = block.forward_cached(x, past_kv)
+            new_caches.append(present)
+        x = self.ln_f(x)
+        # 生成只需要最后一个位置的预测，(B, 1, V)
+        logits = self.lm_head(x[:, [-1], :])
+        return logits, new_caches
 
     def num_params(self, non_embedding: bool = True) -> int:
         """参数量。parameters() 会对共享的 lm_head/wte 去重，只算一次。
