@@ -21,16 +21,12 @@
    python src/demo_check.py           # 自检：GPU、三个 checkpoint、生成结果是否与记录一致
    ```
 
-   预期输出（全部"通过"、"与样例 一致"）：
+   预期三行都是"[通过]"，最后一行是"全部通过，可以启动"。每行会分别给出 no-cache 和 cache 的用时，"与样例"后面是下面两种之一，都算正常：
 
-   ```
-   GPU：NVIDIA GeForce RTX 5060 Ti，torch 2.14.1
-   [通过] s10m   加载  0.5s | 50 token 用时  0.2s（  209 tok/s）| 与样例 一致
-   [通过] s50m   加载  1.4s | 50 token 用时  0.2s（  304 tok/s）| 与样例 一致
-   [通过] s100m  加载  1.9s | 50 token 用时  0.4s（  141 tok/s）| 与样例 一致
-   显存占用（三个模型都在显存里）：0.74 GB
-   全部通过，可以启动：python app/app.py --preload all
-   ```
+   - `一致（no-cache 和 cache）`；
+   - `一致（no-cache；cache 数值分叉）`：checkpoint 没拿错，只是开 KV cache 时 bf16 有极小数值差（见第五节）。
+
+   如果显示"不一致！"并且"[失败]"，说明 no-cache 和 cache 都和记录对不上，先检查是不是拿错了 checkpoint。
 
 3. 启动界面（这个终端不要关）：
 
@@ -40,11 +36,11 @@
 
 4. 在 Windows 的浏览器打开 `http://127.0.0.1:7860`（WSL2 会自动转发端口）。浏览器缩放 125%。
 5. **热身**：在"02 三模型对比"区块点一次"三个一起生成"（第一次调用有 CUDA 初始化开销），确认三栏都有输出。文字是逐 token 流式出现的，结果与一次性生成完全相同。
-6. 再开一个终端标签页，`cd ~/Codes/tiny-llm && conda activate tiny-llm`，留着给兜底命令用；VS Code 打开 `src/model.py` 并跳到第 66 行，留着讲代码。
+6. 再开一个终端标签页，`cd ~/Codes/tiny-llm && conda activate tiny-llm`，留着给兜底命令用；VS Code 打开 `src/model.py` 并跳到 `CausalSelfAttention.forward`，留着讲代码。
 
 ## 三、演示脚本（2 分钟）
 
-参数都固定了 seed，**现场输出和下面的预期完全一致**（GPU 上已验证）。讲解词是要点，不用逐字背。
+参数都固定了 seed。下面的"预期开头"是**关闭 KV cache** 时在 RTX 5060 Ti 上录的，界面生成**默认开着 KV cache**，所以现场输出的开头一般相同，但**可能在若干 token 后和预期分叉**。2026-11-23 在 RTX 5060 Ti 上实测，10 个用例里有 8 个分叉，其中两处落在下表写出的文字里：s50m 的 French Revolution 会在 "Under Louis XIV's rule" 处变成 "On November 11"；T=1.5、top-k 50 会在 "The food" 处变成 "The process"。分叉不是 bug，出现了就按第五节"现场输出和预期不一样"讲。讲解词只依赖分叉前的内容和整体风格，不用逐字背。
 
 ### 第 1 步：三模型对比（约 50 秒）
 
@@ -92,10 +88,10 @@
 | 浏览器页面卡住、按钮没反应 | 刷新页面（模型已经在显存里，不用重新加载）。还不行就在终端 Ctrl+C，重新 `python app/server.py --preload all` | 10 秒 |
 | 网页界面打不开 / 白屏 | Ctrl+C 后改用 Gradio 备用界面：`python app/app.py --preload all`（同样的功能分成三个标签页，同样端口 7860） | 15 秒 |
 | 两个界面都打不开 | 在备用终端直接用命令行生成（见下面的命令），终端字体调大 | 立即 |
-| CUDA 报错、显卡驱动异常 | 改用 CPU：`CUDA_VISIBLE_DEVICES= python app/server.py --preload all`（`load_model` 没有 GPU 时自动用 CPU）。CPU 实测：s10m 142、s50m 46、s100m 25 tok/s，把 max_new_tokens 调到 100，三模型对比约 7 秒 | 30 秒 |
+| CUDA 报错、显卡驱动异常 | 改用 CPU：`CUDA_VISIBLE_DEVICES= python app/server.py --preload all`（`load_model` 没有 GPU 时自动用 CPU）。CPU 实测：s10m 142、s50m 46、s100m 25 tok/s，把 max_new_tokens 调到 100，三模型对比约 7 秒（这是关闭 cache 时的速度，开 cache 会更快）。换到 CPU 后浮点计算路径变了，输出也会和预期不同，讲法同第五节 | 30 秒 |
 | 演示机无法使用 | 用教室电脑放 PPT，播放提前录好的演示视频；PPT 第 7–10 页已经有全部样例 | 立即 |
 
-命令行兜底（复制粘贴即可，结果与界面相同）：
+命令行兜底（复制粘贴即可；和界面一样默认开 cache、走 GPU，同一台机器上结果与界面相同）：
 
 ```bash
 # 第 1 步：三模型对比
@@ -113,4 +109,5 @@ python src/sample.py --run runs/s100m --prompt "Photosynthesis is the process" -
 - **"换个 prompt 试试"**：直接输入，seed 设 -1（每次随机，界面会显示用了哪个 seed）。英文 prompt 效果好；中文 prompt 模型没学过，会输出乱码（数据里没有中文，可以顺便解释词表和训练数据的关系）。
 - **"看训练中途的模型"**：单模型页的 checkpoint 下拉框选 `runs/s100m/ckpt_tok100M.pt`，对比最终模型（见 [samples_progress.md](../results/samples_progress.md)）。
 - **"讲一下代码"**：VS Code 里的 `src/model.py` 的 `CausalSelfAttention.forward`，讲稿见 [qa.md](qa.md) 第三节。
+- **现场输出和预期不一样（或者有人问"PPT 上的样例怎么和现场不同"）**：先说明"这是 KV cache 带来的浮点误差，不是模型或代码出错"，再讲三句：① 开不开 cache 在数学上完全等价，CPU fp32 的测试里逐 token 一致；② GPU 上用 bf16，只有约 3 位有效数字，整段前向和增量计算的累加顺序不同，logits 会差一点点；③ 固定 seed 时，某一步两个候选词的概率如果非常接近，这点差异就可能让抽样落到另一个词，之后每一步的输入都变了，后文整段分叉。可以指着分叉点说"前面逐字相同，从这里开始走了另一条同样合理的路"。追问可接 [qa.md](qa.md) 里的"有 cache 和没 cache 的输出为什么可能不一样？"。
 - **"生成速度 / KV cache"**：命令行默认走 cache；对比旧实现时加 `--no_cache`。要现场测速用 `python src/bench_kv_cache.py --run runs/s100m --prompt_tokens 250 --max_new_tokens 200`。
