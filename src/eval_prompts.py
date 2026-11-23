@@ -8,6 +8,8 @@
 每种 grid 输出：一个 jsonl（每行一条生成）+ 同名 .md（样例表和汇总）。
 scale 还会输出盲评表 docs/results/blind_eval/sheet.md 和答案 docs/results/blind_eval/key.json。
 生成逻辑全部复用 sample.py 的 load_model / generate_text，这里只负责组织网格和统计。
+
+默认关闭 KV cache，保证重跑历史样例时结果可复现；只想测生成速度时加 --use_cache。
 """
 
 from __future__ import annotations
@@ -66,21 +68,28 @@ def distinct_n(text: str, n: int = 2) -> float:
 
 def run_generation_grid(specs: list[tuple[str, str]], prompts: list[tuple[str, str]],
                         settings: dict[str, tuple[float, int | None, float | None]],
-                        seeds: list[int], max_new_tokens: int = 200) -> list[dict]:
+                        seeds: list[int], max_new_tokens: int = 200,
+                        use_cache: bool = False) -> list[dict]:
     """specs: [(run_dir, ckpt 文件名)]；prompts: [(类别, prompt)]。
-    每个 checkpoint 只加载一次，遍历 prompt × 设置 × seed。"""
+    每个 checkpoint 只加载一次，遍历 prompt × 设置 × seed。
+
+    use_cache 默认 False：历史样例是整段前向生成的，关闭 cache 才能原样复现。
+    需要测加速效果时显式传 True。
+    """
     rows = []
     for run_dir, ckpt in specs:
         model, tok, _ = load_model(run_dir, ckpt)
         n_params = model.num_params(False)
-        generate_text(model, tok, "warm up", max_new_tokens=5)  # 第一次调用含 CUDA 初始化，不计时
+        # 第一次调用含 CUDA 初始化，不计时；预热和实际生成用同一条路径
+        generate_text(model, tok, "warm up", max_new_tokens=5, use_cache=use_cache)
         for kind, prompt in prompts:
             for name, (t, k, p) in settings.items():
                 for seed in seeds:
                     if torch.cuda.is_available():
                         torch.cuda.synchronize()
                     t0 = time.time()
-                    text = generate_text(model, tok, prompt, 1, max_new_tokens, t, k, p, seed)[0]
+                    text = generate_text(model, tok, prompt, 1, max_new_tokens, t, k, p, seed,
+                                         use_cache=use_cache)[0]
                     if torch.cuda.is_available():
                         torch.cuda.synchronize()
                     dt = time.time() - t0
@@ -92,6 +101,7 @@ def run_generation_grid(specs: list[tuple[str, str]], prompts: list[tuple[str, s
                         "text": text, "new_tokens": n_tok, "seconds": round(dt, 3),
                         "tok_per_s": round(n_tok / dt, 1) if dt > 0 else None,
                         "distinct_2": round(distinct_n(text, 2), 4),
+                        "use_cache": use_cache,
                     })
                     print(f"{Path(run_dir).name}/{ckpt} | {name} | seed {seed} | {prompt!r} -> "
                           f"{n_tok} tok, {dt:.2f}s, distinct-2 {rows[-1]['distinct_2']:.3f}")
@@ -179,25 +189,32 @@ def main() -> None:
     p.add_argument("--grid", choices=["scale", "progress", "sampling"], default="scale")
     p.add_argument("--out", required=True, help="输出 jsonl 路径；同名 .md 一起生成")
     p.add_argument("--max_new_tokens", type=int, default=200)
+    p.add_argument("--use_cache", action="store_true",
+                   help="开启 KV cache（更快；默认关闭，保证和历史样例可复现）")
     args = p.parse_args()
+
+    if args.use_cache and args.grid == "scale":
+        print("警告：--use_cache 可能改变生成文本，不要覆盖已有的 samples_A / blind_eval 结果")
 
     all_prompts = [(k, s) for k, ps in PROMPTS.items() for s in ps]
     default = {"T=0.8,k=50": (0.8, 50, None)}
     if args.grid == "scale":
         specs = [(r, "ckpt_best.pt") for r in args.runs]
-        rows = run_generation_grid(specs, all_prompts, default, [42], args.max_new_tokens)
+        rows = run_generation_grid(specs, all_prompts, default, [42], args.max_new_tokens,
+                                   use_cache=args.use_cache)
     elif args.grid == "progress":
         # 同一个模型训练过程中的几个 checkpoint：看"乱码 → 有词 → 有句子 → 有内容"
         run = args.runs[0]
         names = sorted(Path(run).glob("ckpt_tok*.pt"), key=lambda f: int(f.stem[8:-1]))
         specs = [(run, f.name) for f in names] + [(run, "ckpt_best.pt")]
         prompts = [("story", PROMPTS["story"][0]), ("expository", PROMPTS["expository"][0])]
-        rows = run_generation_grid(specs, prompts, default, [42], args.max_new_tokens)
+        rows = run_generation_grid(specs, prompts, default, [42], args.max_new_tokens,
+                                   use_cache=args.use_cache)
     else:
         prompts = [("story", s) for s in PROMPTS["story"][:2]] + \
                   [("expository", s) for s in PROMPTS["expository"][:2]]
         rows = run_generation_grid([(args.runs[0], "ckpt_best.pt")], prompts, SAMPLING_GRID,
-                                   [1, 2, 3], args.max_new_tokens)
+                                   [1, 2, 3], args.max_new_tokens, use_cache=args.use_cache)
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
