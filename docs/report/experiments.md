@@ -7,12 +7,14 @@
 | A | 模型规模 0.01B / 0.05B / 0.1B | ✅（含五人盲评） |
 | B | 采样参数（temperature × top-k，greedy，top-p） | ✅ |
 | C | 分词方式（字符级 vs BPE） | ✅ |
+| D | KV cache 生成加速（扩展） | ✅ |
 
 **总结论**
 
 1. **规模**：参数越多 val loss 越低，但收益递减（3.098 → 2.543 → 2.409）；相同已训练 token 数下大模型也更低。写简单故事 0.05B 已经接近上限，说明文到 0.1B 还在进步，但事实仍然经常是编的。
 2. **采样**：greedy / 低温度会整句复读，T=1.5 会编出不存在的词；top-k=50 能在高温下兜底。推荐 T=0.7–0.8 + top-k=50。
 3. **分词**：不同分词器的 loss 不能直接比，换算成 bits-per-byte 后，相同 token 预算下 BPE 明显优于字符级（SmolLM 1.367 vs 1.602）。
+4. **KV cache**：只影响生成速度，不改变模型质量。s100m 在 233-token prompt 上从约 171 提升到约 286 tok/s（约 1.67x）；s10m 因 batch=1 时每步固定开销占主导，基本持平。GPU bf16 下 cache 和 no-cache 可能有极小数值差。
 
 ---
 
@@ -46,7 +48,7 @@
 | s100m | 105.92M | 99.23M | 1.50B | 2.409 | 2.865 | 1.330 | 11.1 | 115.9 min | 216k | 16.5 GB | 1271 / 424 MB | ~200 tok/s |
 
 - val 取训练结束时最后一次评估（与 `ckpt_best.pt` 相同，三个模型的 val loss 都是一路下降，最好的就是最后的）。表由 `src/plot_compare.py` 生成，原表在 `figures/results.md`。
-- \* 生成速度：本地 RTX 5060 Ti，batch=1，200 个新 token，没有 KV cache（见 `samples_A.md`）。小模型生成也只快不到 2 倍：每一步都要从 Python 发起一次完整前向，batch=1 时 GPU 大部分时间在等，速度主要受每步固定开销限制，而不是计算量。
+- \* 生成速度：本地 RTX 5060 Ti，batch=1，200 个新 token，没有 KV cache（见 `samples_A.md`）。小模型生成也只快不到 2 倍：每一步都要从 Python 发起一次完整前向，batch=1 时 GPU 大部分时间在等，速度主要受每步固定开销限制，而不是计算量。加 KV cache 后的对比见实验 D（测试机器是 RTX 5060 Laptop，绝对值和本表不可直接比）。
 
 ### 相同已训练 token 数下的比较
 
@@ -227,6 +229,37 @@
 
 ---
 
+## 实验 D（扩展）：KV cache 生成加速
+
+### 设置
+
+| 固定项 | 值 |
+|---|---|
+| 机器 | 本地 RTX 5060 Laptop（和实验 A 的 RTX 5060 Ti 数字不可直接比绝对值） |
+| 精度 | bf16，`torch.autocast` |
+| batch | 1 |
+| 采样 | greedy（`temperature=0`），`stop_at_eot=False`，固定生成 200 token |
+| prompt | 用固定句子拼成约 250 token；BPE 边界导致实际为 233 token，表中写实际值 |
+| 计时 | 两种模式各预热一次，重复 2 次取最快一次，前后 `torch.cuda.synchronize()` |
+| 脚本 | `src/bench_kv_cache.py` |
+
+### 结果
+
+| 模型 | prompt token | 新 token | no-cache | cache | 加速比 | 两种模式 token 一致 |
+|---|---|---|---|---|---|---|
+| s10m | 233 | 200 | 704 tok/s | 688 tok/s | 0.98x | 是 |
+| s100m | 4 | 200 | 256 tok/s | 292 tok/s | 1.14x | 否（bf16 数值分叉） |
+| s100m | 233 | 200 | 171 tok/s | 286 tok/s | 1.67x | 是 |
+
+### 结论
+
+1. **KV cache 不改变模型质量，只减少重复计算。** 上下文越长，收益越明显：s100m 在 233-token prompt 上约 1.67x；短 prompt 只有 1.14x。
+2. **s10m 基本持平。** batch=1 时每一步都有固定的 Python/内核启动开销，小模型本身计算量小，cache 省下的计算被额外拼接 cache 的开销抵消，实测在 0.9–1.0x 之间波动。
+3. **超过 `block_size` 后加速会消失。** 本项目用可学习绝对位置编码，窗口滑动时必须重建 cache，不能直接丢掉最旧的 K/V；这是位置编码方式带来的限制，换 RoPE 后可以再优化。
+4. **数值差异不是逻辑错误。** CPU fp32 下 `pytest tests/` 里 cache / no-cache 逐 token 一致；GPU bf16 下计算顺序不同，greedy 在 logits 很接近时偶发分叉，所以历史样例对比（`demo_check`、`eval_prompts`）默认关闭 cache。
+
+---
+
 ## 复现命令
 
 ```bash
@@ -241,4 +274,10 @@ python src/eval_prompts.py --runs runs/s100m --grid sampling --out docs/results/
 python src/prepare.py --tokenizer char --shards 1 --out_dir data/processed_char
 python src/train.py --config configs/s10m_char.yaml
 python src/evaluate.py bpb --runs runs/s10m runs/s10m_char runs/s50m runs/s100m
+# 实验 D：KV cache 速度对比
+python src/bench_kv_cache.py --run runs/s10m --prompt_tokens 250 --max_new_tokens 200 --repeats 2
+python src/bench_kv_cache.py --run runs/s100m --prompt_tokens 4 --max_new_tokens 200 --repeats 2
+python src/bench_kv_cache.py --run runs/s100m --prompt_tokens 250 --max_new_tokens 200 --repeats 2
+# 上面的 eval_prompts 默认关闭 cache，保证和历史样例一致；只测速度时加 --use_cache
+python src/eval_prompts.py --runs runs/s100m --grid sampling --use_cache --out /tmp/samples_speed.jsonl
 ```

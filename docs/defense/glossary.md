@@ -48,4 +48,6 @@
 - **Top-k**：只在概率最高的 k 个 token 里采样。截掉低概率的长尾，避免偶尔抽到离谱的词。
 - **Top-p（nucleus）**：只保留累计概率达到 p 的最少 token 集合。模型很确定时候选很少，不确定时候选变多，比固定 k 更自适应。
 - **Greedy 解码**：每步都选概率最大的 token。结果确定，但容易陷入重复循环。
-- **KV cache**：生成时缓存每层已算过的 key 和 value，新 token 只计算自己的部分。把每步注意力计算从 O(T²) 降到 O(T)，长文本生成大幅提速。
+- **KV cache**：生成时缓存每层已算过的 key 和 value，新 token 只计算自己的部分。历史 token 的 k/v 不会变，所以可以复用；q 只对当前 token 有意义，不缓存。它不减少前向调用次数，但把每次 decode 的计算量从整个前缀降到 1 个新 token，长文本生成提升明显。
+- **Prefill / Decode**：prefill 是首轮把完整 prompt 送进模型、算出一层层的 K/V 并预测第一个新 token；decode 是之后每次只送 1 个新 token，把它的 K/V 追加到 cache 再预测下一个。
+- **滑动窗口与位置编码**：本项目的位置表 `wpe` 只有 `block_size` 行。生成超过上下文后只看最后 `block_size` 个 token，位置从 0 重新编号；因此 cache 到上限时要重建，不能简单丢掉最旧的 K/V。

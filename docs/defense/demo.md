@@ -112,4 +112,5 @@ python src/sample.py --run runs/s100m --prompt "Photosynthesis is the process" -
 
 - **"换个 prompt 试试"**：直接输入，seed 设 -1（每次随机，界面会显示用了哪个 seed）。英文 prompt 效果好；中文 prompt 模型没学过，会输出乱码（数据里没有中文，可以顺便解释词表和训练数据的关系）。
 - **"看训练中途的模型"**：单模型页的 checkpoint 下拉框选 `runs/s100m/ckpt_tok100M.pt`，对比最终模型（见 [samples_progress.md](../results/samples_progress.md)）。
-- **"讲一下代码"**：VS Code 里的 `src/model.py:66`（注意力 forward），讲稿见 [qa.md](qa.md) 第三节。
+- **"讲一下代码"**：VS Code 里的 `src/model.py` 的 `CausalSelfAttention.forward`，讲稿见 [qa.md](qa.md) 第三节。
+- **"生成速度 / KV cache"**：命令行默认走 cache；对比旧实现时加 `--no_cache`。要现场测速用 `python src/bench_kv_cache.py --run runs/s100m --prompt_tokens 250 --max_new_tokens 200`。

@@ -44,6 +44,8 @@ conda run -n tiny-llm-repro pytest tests/
 
 7 个 skipped 全部来自 `tests/test_server.py`，原因是没有 `runs/s10m/ckpt_best.pt`。干净副本本来就没有 checkpoint，属于预期；下载权重或自己训练后重跑即可全部执行。这一点 README 第 8 节已经写明。
 
+> 2026-11-23 KV cache 合入 `main` 后新增了 9 个缓存测试；现在没有 checkpoint 时预期 **44 passed, 7 skipped**。本表保留 11-20 首次复现时的 35 passed 原值。
+
 ## 3. 数据准备
 
 ```bash
@@ -134,7 +136,7 @@ python src/sample.py --run runs/repro_debug --prompt "Once upon a time" \
 
 | 文件 | 改动 |
 |---|---|
-| `README.md` | 安装前三项检查（环境名 / condarc / 磁盘）；94 秒建环境实测；HF 镜像；CPU bf16 坑与 `--dtype float32`；`--shards 1` 实测统计；CPU 训练和生成速度；pytest 预期 35 passed / 7 skipped |
+| `README.md` | 安装前三项检查（环境名 / condarc / 磁盘）；94 秒建环境实测；HF 镜像；CPU bf16 坑与 `--dtype float32`；`--shards 1` 实测统计；CPU 训练和生成速度；pytest 当时 35 passed / 7 skipped（KV cache 扩展后为 44 passed / 7 skipped） |
 | `docs/design/01-environment.md` | 6.1 节补 CPU 精度说明；常见坑新增 HF DNS、环境重名、bf16 极慢、prepare 中断；新增 2026-11-20 复现记录 |
 | `docs/defense/qa.md` | 新增「八、复现与环境」5 个问答；勾掉「干净环境复现」待办 |
 

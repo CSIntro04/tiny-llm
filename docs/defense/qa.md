@@ -11,7 +11,7 @@
 原始 Transformer 是翻译模型：编码器双向读完原文，解码器一边看编码器输出一边逐词生成译文。Decoder-only 去掉了编码器和交叉注意力，只保留带因果掩码的自注意力层，输入和输出是同一个序列。GPT 系列都是这种结构，适合"续写"这种任务。
 
 **整个流程是什么？**
-文本 → 清洗 → BPE 编码成 token id → 存成 uint16 的 .bin（`src/prepare.py`）→ 随机截取长度 513 的片段，x 是前 512 个、y 是后 512 个（`src/utils.py:15`）→ 模型输出每个位置对下一个 token 的打分 → cross entropy 损失 → 反向传播 + AdamW（`src/train.py`）→ 生成时每步取最后一个位置的分布抽样（`src/sample.py:106`）。
+文本 → 清洗 → BPE 编码成 token id → 存成 uint16 的 .bin（`src/prepare.py`）→ 随机截取长度 513 的片段，x 是前 512 个、y 是后 512 个（`src/utils.py:15`）→ 模型输出每个位置对下一个 token 的打分 → cross entropy 损失 → 反向传播 + AdamW（`src/train.py`）→ 生成时每步取最后一个位置的分布抽样（`src/sample.py` 的 `generate`）。
 
 ## 二、数据与词元化
 
@@ -35,7 +35,7 @@ SmolLM 是 ODC-By 1.0，使用时需要署名；TinyStories 是 CDLA-Sharing-1.0
 
 ## 三、模型
 
-**注意力的计算过程和张量形状？**（`src/model.py:66-95`）
+**注意力的计算过程和张量形状？**（`src/model.py` 的 `_attend` / `forward`）
 输入 `(B,T,C)` 经过 `c_attn` 变成 `(B,T,3C)`，拆成 q、k、v 各 `(B,T,C)`；再 view 成 `(B,T,nh,hs)`、transpose 成 `(B,nh,T,hs)`，让每个头独立计算。`q @ kᵀ / √hs` 得到 `(B,nh,T,T)` 的打分矩阵，第 i 行是位置 i 对各位置的关注程度；加因果掩码、softmax 后乘 v 得到 `(B,nh,T,hs)`，最后 transpose + view 合并回 `(B,T,C)`，经过 `c_proj` 混合各头的信息。
 
 **因果掩码的作用？去掉会怎样？**
@@ -47,10 +47,10 @@ q、k 每一维近似独立、方差为 1 时，点积的方差是 hs（64）。
 **多头的意义？**
 把 768 维拆成 12 个 64 维的子空间，每个头独立算注意力，可以同时关注不同的关系，比如一个头看前一个词、一个头看句子主语。参数量和单头一样，只是分组计算。
 
-**残差连接和 LayerNorm 的作用？Pre-LN 和 Post-LN 的区别？**（`src/model.py:122-127`）
+**残差连接和 LayerNorm 的作用？Pre-LN 和 Post-LN 的区别？**（`src/model.py` 的 `Block.forward`）
 残差 `x = x + f(x)` 让子层只学"增量"，梯度可以沿恒等路径直接传回浅层，深层网络才训练得动。LayerNorm 把每个 token 的向量归一化，稳定数值范围。原论文是 Post-LN（先加残差再归一化），我们用 Pre-LN（归一化放在子层之前），残差路径上没有任何变换，深层训练更稳定，不太依赖 warmup。
 
-**权重共享省了多少参数？为什么合理？**（`src/model.py:142`）
+**权重共享省了多少参数？为什么合理？**（`src/model.py:195`）
 输出层 `lm_head` 和输入的 `wte` 用同一个 V×C 矩阵，s100m 省 629 万参数，s10m 省 315 万（占总参数 22%）。合理性在于：输入时"id → 向量"和输出时"向量 → 和每个词有多像"是同一种语义对应关系，共享后两边互相提供训练信号，实践中效果通常更好。
 
 **参数量怎么算？每层为什么约 12C²？**
@@ -61,7 +61,7 @@ q、k 每一维近似独立、方差为 1 时，点积的方差是 hs（64）。
 
 ## 四、损失
 
-**为什么用 cross entropy？**（`src/model.py:184`）
+**为什么用 cross entropy？**（`src/model.py:237`）
 每个位置都是一个 8192 类的分类问题。cross entropy 就是正确 token 的 −log p 的平均，最小化它等价于最大化训练数据的似然。它对"自信地猜错"惩罚很重，梯度形式也很简单（softmax 输出减 one-hot）。
 
 **初始 loss 为什么 ≈ ln(V)？**
@@ -73,7 +73,7 @@ q、k 每一维近似独立、方差为 1 时，点积的方差是 hs（64）。
 ## 五、训练
 
 **为什么用 AdamW 而不是 SGD？和 Adam 有什么区别？**
-Adam 给每个参数自适应地调整步长（用梯度一阶、二阶矩的估计），对 Transformer 这种各层梯度量级差异很大的模型比 SGD 好调得多。AdamW 把 weight decay 和梯度更新解耦，直接对参数乘一个衰减系数，而不是加到梯度里经过 Adam 的缩放。我们只对二维权重做 decay，bias 和 LayerNorm 不做（`src/model.py:198`）。
+Adam 给每个参数自适应地调整步长（用梯度一阶、二阶矩的估计），对 Transformer 这种各层梯度量级差异很大的模型比 SGD 好调得多。AdamW 把 weight decay 和梯度更新解耦，直接对参数乘一个衰减系数，而不是加到梯度里经过 Adam 的缩放。我们只对二维权重做 decay，bias 和 LayerNorm 不做（`src/model.py:281`）。
 
 **warmup 解决什么问题？为什么后期要降学习率？**（`src/utils.py:110`）
 刚开始参数是随机的、梯度方向不可靠，Adam 的二阶矩估计也还不准，一上来就用大步长容易发散，所以前 200 步从 0 线性升到峰值。之后按余弦曲线降到峰值的 1/10：后期用小步长在低谷附近精细收敛。我们的实验也看到，学习率衰减完的 checkpoint 比同 token 数但学习率还高的 checkpoint loss 低。
@@ -98,7 +98,7 @@ RTX 50 系是 Blackwell 架构（sm_120），只有 CUDA 12.8 以上的编译器
 
 ## 六、生成
 
-**模型输出的是什么？怎么从 logits 变成一个具体的词？**（`src/sample.py:71`）
+**模型输出的是什么？怎么从 logits 变成一个具体的词？**（`src/sample.py` 的 `sample_next`）
 模型对最后一个位置输出 8192 个打分（logits）。先除以 temperature，再按 top-k / top-p 把候选范围之外的打分设成 −∞，softmax 变成概率分布，最后按概率随机抽一个 token。把它接到输入末尾，重复这个过程。
 
 **temperature 的数学含义？T→0 和 T→∞ 分别会怎样？**
@@ -111,10 +111,16 @@ top-k 只在概率最高的 k 个词里抽，简单，但 k 是固定的：模�
 每步都选最可能的词，一旦生成了一个循环，循环里的每一步本身都是"最可能"的，模型就跳不出来。实验 B 里 greedy 的说明文整句复读"What is the difference between photosynthesis and photosynthesis?"，distinct-2 只有 0.53。
 
 **上下文超过 512 个 token 怎么办？**
-位置编码只有 512 个，生成时只保留最后 512 个 token 作为输入（`src/sample.py:119`），更早的内容模型看不到。
+位置编码只有 512 个，生成时只保留最后 512 个 token 作为输入（`src/sample.py` 的 `_cached_logits`），更早的内容模型看不到。用 KV cache 时，cache 长度到 512 会丢掉旧 cache、重新 prefill 最后 512 个 token，保持和原来一样的滑动窗口。
 
 **生成一段文本时模型前向了多少次？**
-每生成一个 token 前向一次，生成 200 个 token 就是 200 次。我们没有做 KV cache，每次都把整个上下文重新算一遍；KV cache 会把之前位置的 k、v 存下来，每步只算新 token，速度能快很多。
+分两种说法。**调用次数**仍然是一步一次：首轮 prefill 一次，之后每生成一个 token 再 decode 一次，生成 200 个 token 约 201 次。**每次的计算量**变了：没有 cache 时每次都要为整个前缀算 K/V 和注意力，有 cache 时每次只算新 token，历史 K/V 直接复用。
+
+**KV cache 缓存什么？为什么不缓存 q？**
+缓存每层每个头已经算过的 K 和 V。q 是"当前位置想找什么信息"，只对当前这个新 token 有意义，用完就丢；K/V 是"历史位置提供什么信息"，后面的 token 还要反复用到，所以只缓存 K/V。位置编码和因果掩码也要处理：新 token 的位置从 cache 长度开始，带 cache 一次输入多个 token 时要传按绝对位置切好的掩码。
+
+**有 cache 和没 cache 的输出为什么可能不一样？**
+数学上应该一致。但 GPU bf16 下"整段前向"和"增量 decode"的计算顺序不同，logits 会有极小误差，greedy 在差距很小时可能选到不同 token。CPU fp32 的测试里两者逐 token 一致；历史样例对比（`demo_check`、`eval_prompts`）默认关闭 cache 就是为了避免这个误差。
 
 ## 七、实验
 
@@ -151,7 +157,7 @@ TinyStories 词汇少、句式固定，s10m 的 loss 就已经到 1.85；SmolLM 
 ## 八、复现与环境
 
 **怎么证明别人能照着 README 复现？**
-2026-11-20 在一台完全干净的 Linux 机器上（Intel Core Ultra 5 125H，18 线程，无 NVIDIA 显卡）用 `git worktree` 拉出副本、新建独立环境，从头跑通：建环境 94 秒；`check_env.py` 三项通过；`pytest tests/` 35 passed / 7 skipped；`--shards 1` 数据 3 分 36 秒、2.54 亿训练 token；debug 模型 1200 步（fp32）训练 50.8 分钟，val 9.06 → 3.99；`sample.py` 正常生成，230 tok/s。全程只用 README 里的命令，记录在 [01-environment.md](../design/01-environment.md) 的环境记录。
+2026-11-20 在一台完全干净的 Linux 机器上（Intel Core Ultra 5 125H，18 线程，无 NVIDIA 显卡）用 `git worktree` 拉出副本、新建独立环境，从头跑通：建环境 94 秒；`check_env.py` 三项通过；`pytest tests/` 35 passed / 7 skipped（KV cache 扩展后无 checkpoint 为 44 passed / 7 skipped）；`--shards 1` 数据 3 分 36 秒、2.54 亿训练 token；debug 模型 1200 步（fp32）训练 50.8 分钟，val 9.06 → 3.99；`sample.py` 正常生成，230 tok/s。全程只用 README 里的命令，记录在 [01-environment.md](../design/01-environment.md) 的环境记录。
 
 **没有 GPU 怎么办？**
 用 `environment-cpu.yml` 建环境（环境名同样是 `tiny-llm`）：`check_env.py` 自动按 CPU 检查，`train.py` 自动关闭 `torch.compile`，`sample.py` 和两套界面自动退回 CPU。CPU 能跑测试、生成、界面和 debug 训练；正式规模的训练仍需要 GPU。CPU 训练要加 `--dtype float32`（除非 CPU 支持 AVX512-BF16）。
@@ -168,10 +174,10 @@ bf16 矩阵乘法要靠 CPU 指令集加速：Zen 4 等支持 AVX512-BF16 的 CP
 ## 九、展望与个人
 
 **如果给你们更多时间/算力，下一步做什么？**
-① 更多数据、训练更久，s100m 现在还在欠拟合；② 换 RoPE 位置编码，把位置信息"旋转"进 q、k，可以处理比训练时更长的上下文；③ 加 KV cache，生成速度能快很多；④ 加大上下文长度；⑤ 用问答数据做指令微调，让模型能回答问题而不只是续写。
+① 更多数据、训练更久，s100m 现在还在欠拟合；② 换 RoPE 位置编码，把位置信息"旋转"进 q、k，可以处理比训练时更长的上下文；③ 给 KV cache 预分配 buffer、减少每步 `torch.cat`，并配合 RoPE 让超过 512 token 的生成也持续加速；④ 加大上下文长度；⑤ 用问答数据做指令微调，让模型能回答问题而不只是续写。
 
 **这个项目里你个人负责什么？遇到的最大问题是什么？**（各自准备，提纲）
-- A（数据 + 采样）：TinyStories 约 6% 的故事引号乱码（`â€™`），修复前一个分片要丢 3.2 万篇，修复后全量只丢 406 篇；top-p 实现时第一个让累计概率超过 p 的 token 要保留。
+- A（数据 + 采样 + KV cache）：TinyStories 约 6% 的故事引号乱码（`â€™`），修复前一个分片要丢 3.2 万篇，修复后全量只丢 406 篇；top-p 实现时第一个让累计概率超过 p 的 token 要保留；KV cache 要处理位置偏移、带 cache 的因果掩码和超过 512 后的窗口重建。
 - B（模型 + 训练）：权重共享与初始化的顺序；`load_model` 直接读到 GPU 时 AdamW 状态白占显存；本地 8GB 跑不动正式训练，改到云端 5090。
 - C（实验 + 界面 + 报告）：相同 token 数比较要单独评估中途 checkpoint；盲评 R3 反向打分的发现和处理；字符级 vs BPE 必须换算到 bpb。
 
@@ -182,7 +188,7 @@ bf16 矩阵乘法要靠 CPU 指令集加速：Zen 4 等支持 AVX512-BF16 的 CP
 1. **三模型对比（1 分钟）**：打开界面"三模型对比"页，输入 "Once upon a time"，默认参数（T=0.8，top-k=50，seed=42）生成。讲：三个模型都能写故事；再换 "The French Revolution began"，s10m 反复说"Roman Empire"，s100m 开始出现 1789 这样的正确年份，但事实仍然是编的。
 2. **调温度（1 分钟）**：切到"单模型生成"，s100m，"Photosynthesis is the process"，T=0 → 0.8 → 1.5（top-k=0）→ 1.5（top-k=50）。讲：greedy 整句复读；0.8 正常；1.5 乱码；加上 top-k 又拉回来。
 3. **曲线与结论（1.5 分钟）**：PPT 上的 val loss 叠图和 scaling 图，讲收益递减和"相同 token 数下大模型也更好"。
-4. **代码（1.5 分钟）**：打开 `src/model.py:66`，讲注意力 forward 的形状变化、因果掩码、为什么除以 √hs。
+4. **代码（1.5 分钟）**：打开 `src/model.py` 的 `CausalSelfAttention.forward`，讲注意力 forward 的形状变化、因果掩码、为什么除以 √hs。
 
 ## 待办
 
