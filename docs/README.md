@@ -39,8 +39,8 @@ docs/
 | [02-data.md](design/02-data.md) | 阶段 2：两个语料的下载、清洗、验证集切分、BPE-8192、按来源混合采样 |
 | [03-model.md](design/03-model.md) | 阶段 3：手写 GPT（注意力、MLP、权重共享） |
 | [04-training.md](design/04-training.md) | 阶段 4：训练循环、日志、checkpoint、资源估算 |
-| [05-sampling.md](design/05-sampling.md) | 阶段 5：temperature / top-k / top-p 采样、命令行生成 |
-| [06-experiments.md](design/06-experiments.md) | 阶段 6：实验设计（规模、采样参数、分词方式） |
+| [05-sampling.md](design/05-sampling.md) | 阶段 5：temperature / top-k / top-p 采样、命令行生成、KV cache |
+| [06-experiments.md](design/06-experiments.md) | 阶段 6：实验设计（规模、采样参数、分词方式、KV cache 加速） |
 | [07-app.md](design/07-app.md) | 阶段 7：交互界面（Gradio 备用版 + React 网页版） |
 | [08-report.md](design/08-report.md) | 阶段 8：README、报告素材、答辩准备 |
 
@@ -50,7 +50,7 @@ docs/
 |---|---|
 | [data.md](report/data.md) | 数据集说明：来源、许可、下载文件与 sha256、清洗与丢弃统计、分词器、token 数 |
 | [model.md](report/model.md) | 模型结构图（含 Block 内张量形状）、按组件的参数量统计、训练设置表 |
-| [experiments.md](report/experiments.md) | 实验 A/B/C 的结果、图表、生成样例、盲评和结论 |
+| [experiments.md](report/experiments.md) | 实验 A/B/C 的结果、图表、生成样例、盲评和结论，以及 KV cache 加速实验 D |
 | [reproduction.md](report/reproduction.md) | 2026-11-20 在无 GPU 干净环境复现的完整步骤、实测数据、bf16 问题和改动清单 |
 
 ### defense/：答辩

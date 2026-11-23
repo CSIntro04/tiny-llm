@@ -159,7 +159,7 @@ python src/sample.py --run runs/s100m --prompt "Photosynthesis is the process" \
 python src/sample.py --run runs/s100m --ckpt ckpt_tok300M.pt --prompt "Once upon a time"  # 训练中途的模型
 ```
 
-`--temperature 0` 是 greedy；`--top_k 0` 表示不限制。
+`--temperature 0` 是 greedy；`--top_k 0` 表示不限制。生成默认使用 KV cache；加 `--no_cache` 可关闭，用于对比旧速度。
 
 没有 GPU 时自动用 CPU（默认的 `--device cuda` 检测不到显卡会退回 cpu）：debug 模型生成 80 个 token 实测 0.35 秒（**230 tok/s**，18 核 CPU）。刚训练完可以直接试：
 
@@ -199,24 +199,26 @@ python app/app.py --preload all      # 备用：Gradio 版界面，功能相同�
 - **实验 A（模型规模）**：参数越多 val loss 越低，但收益递减（s10m→s50m 降 0.555，s50m→s100m 只降 0.134）。相同已训练 token 数下大模型也更低。五人盲评：故事在 0.05B 就到顶，说明文到 0.1B 还在进步。
 - **实验 B（采样参数）**：greedy / 低温度会整句复读，T=1.5 会编出不存在的词；top-k=50 能在高温下兜底。推荐 T=0.7–0.8 + top-k=50。
 - **实验 C（字符级 vs BPE）**：不同分词器的 loss 不能直接比，要换成 bits-per-byte。相同 token 预算下 BPE 更好（SmolLM 1.367 vs 1.602 bpb）。
+- **实验 D（KV cache）**：只影响生成速度，不改变模型质量。s100m 在 233-token prompt 上约 1.67x（171 → 286 tok/s）；s10m 因 batch=1 固定开销基本持平（0.98x）。
 
 完整结果、图表、样例和盲评见 [docs/report/experiments.md](docs/report/experiments.md)。模型结构和参数量见 [docs/report/model.md](docs/report/model.md)。
 
 ## 8. 测试
 
 ```bash
-pytest tests/        # 数据、模型（形状/因果性/注意力等价/权重共享/过拟合）、训练、采样、评估、导出
+pytest tests/        # 数据、模型（形状/因果性/注意力等价/KV cache/过拟合）、训练、采样、评估、导出
 python src/model.py  # 打印四档配置的参数量（按组件拆分）
 ```
 
-在干净副本里（还没有 checkpoint）预期 **35 passed, 7 skipped**：跳过的是 `tests/test_server.py` 里需要 `runs/s10m/ckpt_best.pt` 的 7 个用例；按第 4 节下载权重或自己训练后再跑就会全部执行。实测约 27 秒（18 核 CPU）。
+在干净副本里（还没有 checkpoint）预期 **44 passed, 7 skipped**：跳过的是 `tests/test_server.py` 里需要 `runs/s10m/ckpt_best.pt` 的 7 个用例；按第 4 节下载权重或自己训练后再跑就会全部执行。2026-11-20 首次复现时是 35 passed（KV cache 扩展新增了 9 个测试），当时实测约 27 秒（18 核 CPU）。
 
 ## 目录结构
 
 ```
 configs/      实验配置（debug / s10m / s50m / s100m / s10m_char）
 src/          tokenizer.py  prepare.py  model.py  train.py  sample.py  utils.py
-              evaluate.py  eval_prompts.py  plot_compare.py  score_blind.py  export.py  demo_check.py  check_env.py
+              evaluate.py  eval_prompts.py  bench_kv_cache.py  plot_compare.py  score_blind.py  export.py
+              demo_check.py  check_env.py
 app/          server.py（FastAPI 后端）  web/（React + shadcn/ui 前端）  app.py（Gradio 备用界面）  common.py
 tests/        pytest 测试
 data/         raw/（下载的 parquet，不进 git）  processed/（bin 不进 git；meta.json、tokenizer.json 进 git）

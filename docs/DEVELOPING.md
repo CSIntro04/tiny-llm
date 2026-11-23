@@ -2,9 +2,11 @@
 
 写给要在这个项目上继续改代码、加实验的组员（以及 Claude Code）。项目规则的原文在根目录 [CLAUDE.md](../CLAUDE.md)，本文是它的操作版。
 
-## 1. 当前状态（2026-11-15）
+## 1. 当前状态（2026-11-23）
 
 八个阶段全部完成：三个正式模型（s10m / s50m / s100m）已在云端 RTX 5090 上训练完，实验 A（规模）、B（采样参数）、C（字符级 vs BPE）都有结论，网页界面和答辩材料都已就绪。结果摘要见根 [README.md](../README.md) 第 7 节。
+
+2026-11-23 扩展：KV cache 已实现并合入 `main`（PR #4/#6）。模型层在 `src/model.py` 的 `forward_cached`，生成层在 `src/sample.py` 的 `_cached_logits`；测速脚本是 `src/bench_kv_cache.py`，结果见 [report/experiments.md](report/experiments.md) 实验 D。
 
 ### 哪些在 git 里，哪些不在
 
@@ -40,7 +42,7 @@ parquet ──prepare.py──▶ data/processed/*.bin（uint16） + tokenizer.j
                               │
                     runs/<name>/ckpt_*.pt
                               │
-        sample.load_model ──▶ generate / generate_text / generate_stream
+        sample.load_model ──▶ generate / generate_text / generate_stream（可开 KV cache）
                               │
               app/common.py（找 checkpoint、缓存模型、GPU 锁）
                  ├── app/server.py（FastAPI + SSE）◀── app/web/（React 前端）
@@ -51,12 +53,13 @@ parquet ──prepare.py──▶ data/processed/*.bin（uint16） + tokenizer.j
 |---|---|
 | `src/tokenizer.py` | `BPETokenizer`、`CharTokenizer`、教学用的 `train_bpe_toy`、`load_tokenizer(meta_path)` |
 | `src/prepare.py` | 下载、清洗、按文档哈希切验证集、训练分词器、编码成 `.bin` |
-| `src/model.py` | `GPTConfig`、`MODEL_PRESETS`、`CausalSelfAttention`、`MLP`、`Block`、`GPT`；`python src/model.py` 打印参数量 |
+| `src/model.py` | `GPTConfig`、`MODEL_PRESETS`、`CausalSelfAttention`、`MLP`、`Block`、`GPT`；推理缓存接口 `forward_cached`；`python src/model.py` 打印参数量 |
 | `src/utils.py` | `get_batch`、`load_config`（yaml + `--键 值` 覆盖）、`set_seed`、`get_lr`、`CSVLogger`、`plot_loss` |
 | `src/train.py` | 训练入口，`--resume` 续训、`--overfit` 过拟合测试 |
-| `src/sample.py` | 加载模型、采样（`sample_next`：temperature / top-k / top-p）、命令行生成 |
+| `src/sample.py` | 加载模型、采样（`sample_next`：temperature / top-k / top-p）、命令行生成；`use_cache` / `--no_cache` |
+| `src/bench_kv_cache.py` | 对比 KV cache 开/关的生成速度（预热 + 多次取最快） |
 | `src/evaluate.py` | 在同一批验证数据上重新算 loss（`loss`）和 bits-per-byte（`bpb`） |
-| `src/eval_prompts.py` | 固定 prompt 批量生成样例、distinct-2、盲评表 |
+| `src/eval_prompts.py` | 固定 prompt 批量生成样例、distinct-2、盲评表；默认关闭 cache 以复现历史样例 |
 | `src/plot_compare.py` | 多 run 的 loss 叠图、scaling 图、最终结果表 |
 | `src/score_blind.py` | 汇总人工盲评（R1–R5） |
 | `src/export.py` | 导出仅权重 checkpoint 到 `release/` |
@@ -99,6 +102,10 @@ parquet ──prepare.py──▶ data/processed/*.bin（uint16） + tokenizer.j
 
 - `src/sample.py` 里的 `generate()` 和 `generate_stream()` 是两份循环，**随机数的调用顺序必须一致**，否则同一个 seed 下网页和命令行结果不同。`tests/test_server.py::test_stream_matches_generate_text` 会检查。
 - 采样参数的范围同时出现在三处：`src/sample.py` 命令行参数、`app/server.py` 的 `GenerateRequest`、前端 `app/web/src/components/SamplingPanel.tsx`，改了要一起改。
+- 生成默认 `use_cache=True`：首轮 prefill 完整窗口，之后每轮只 decode 上一轮刚采出的新 token 一次（`_cached_logits`）。`--no_cache` 保留旧的整段前向，用于等价性对比和测速基准。
+- 上下文窗口满（`cache_len >= block_size`）时要重建 cache，否则位置编码会越界；这段逻辑在 `_cached_logits` 里，不要只改 `generate` 不改 `generate_stream`。
+- `demo_check.py`、`eval_prompts.py` 默认关闭 cache，保证和 `samples_A.jsonl` / 盲评的历史结果可复现；只想测速度时用 `eval_prompts.py --use_cache` 或 `src/bench_kv_cache.py`。
+- 改完跑 `pytest tests/test_model.py tests/test_sample.py tests/test_server.py`；有 checkpoint 再跑 `python src/demo_check.py`。
 
 ### 改网页界面
 
@@ -123,18 +130,21 @@ conda run -n slides python docs/defense/slides/build_slides.py   # 第一次先 
 
 - [ ] `pytest tests/` 全部通过。
 - [ ] 改了模型、采样或界面：有 checkpoint 时跑 `python src/demo_check.py`。
+- [ ] 改了 KV cache：跑 `pytest tests/test_model.py tests/test_sample.py tests/test_server.py`，再用 `src/bench_kv_cache.py` 更新速度数字。
 - [ ] 文档里的数字（README、report/、PPT 脚本）与 `docs/figures/results.md` 一致。
 - [ ] 没有把大文件加进 git（`git status` 里不应出现 `.pt`、`.bin`、`.parquet`、`.tar`）。
 - [ ] 新文档放进对应的 `docs/` 子目录，并在 [docs/README.md](README.md) 的索引里加一行。
 
 ## 6. 可以继续做的方向
 
-按从易到难排。每一项都要遵守"≤ 0.1B"和"长时间训练先确认"。
+**已完成**：KV cache（模型层 `forward_cached` + 生成层 `use_cache`），结果和注意事项见 [report/experiments.md](report/experiments.md) 实验 D。
+
+下面是还可以做的方向，按从易到难排。每一项都要遵守"≤ 0.1B"和"长时间训练先确认"。
 
 1. **在 s10m 上做小消融**（几分钟一次）：学习率、warmup 长度、数据配比（`data.mix` 可以写成 `{smollm: 0.5, tinystories: 0.5}` 这样的字典，或者把 `data.sources` 改成只有 `[tinystories]`）、dropout。s10m 在 5090 上 4.6 分钟、本地约 18 分钟就能训完，适合多试几组，补充实验 B 以外的"训练设置对比"。
-2. **KV cache**：生成时把每层已经算过的 k、v 存下来，新 token 只算自己的 q、k、v，不用每步重算整个前缀。现在每步都做完整前向（见 report/experiments.md 里关于生成速度的说明），加上后 200 token 的生成应该明显变快。改 `CausalSelfAttention.forward` 和 `sample.generate*`，并加测试：有无 cache 的输出 logits 应一致。
-3. **RoPE（旋转位置编码）**：不再加可学习的位置向量 `wpe`，而是把位置信息以"旋转"的方式乘进 q、k，注意力分数只依赖相对距离，长度外推更好，还省掉 `512 × C` 个参数。按上面"改模型结构"的步骤做，再用 s10m 和现有 run 对比 val loss。
-4. **中文字符级小模型**：课程建议里提到的中文路线。字符级、过滤低频字后约 5000 字的词表，数据集需要另找并先确认来源和大小。可以复用 `CharTokenizer` 和 `configs/s10m_char.yaml` 的思路。
-5. **更多评估**：例如在 TinyStories 上用固定 prompt 测重复率随 temperature 的变化曲线，或给说明文样例加事实性的人工检查表。
+2. **RoPE（旋转位置编码）**：不再加可学习的位置向量 `wpe`，而是把位置信息以"旋转"的方式乘进 q、k，注意力分数只依赖相对距离，长度外推更好，还省掉 `512 × C` 个参数。按上面"改模型结构"的步骤做，再用 s10m 和现有 run 对比 val loss。
+3. **中文字符级小模型**：课程建议里提到的中文路线。字符级、过滤低频字后约 5000 字的词表，数据集需要另找并先确认来源和大小。可以复用 `CharTokenizer` 和 `configs/s10m_char.yaml` 的思路。
+4. **更多评估**：例如在 TinyStories 上用固定 prompt 测重复率随 temperature 的变化曲线，或给说明文样例加事实性的人工检查表。
+5. **KV cache 的下一步**：预分配 cache buffer 避免每步 `torch.cat`，让 s10m 这种小模型也能受益；以及配合 RoPE 解决超过 `block_size` 后窗口重建、加速消失的问题。
 
 完成的方向请在 [report/experiments.md](report/experiments.md) 追加一节，并更新根 README 的结果摘要。

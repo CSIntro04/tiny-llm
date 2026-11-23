@@ -99,6 +99,14 @@ def export_markdown(rows, out_md: str) -> None: ...
 - **不能直接比 loss**：两者每个 token 代表的信息量不同。换算成 **bits-per-byte**：`bpb = val_loss / ln(2) × (token 数 / 字节数)`。
 - 只在时间充裕时做（需要额外约 1 小时训练）。注意字符级下 3 亿 token 只对应约 3 亿字节文本，远少于 BPE 下 3 亿 token 覆盖的文本量，结论要写明这一点。
 
+## 实验 D（扩展）：KV cache 生成加速
+
+- 变量：生成时 `use_cache=False`（每步重算完整前缀）vs `True`（复用每层 K/V）。
+- 固定：同一个 checkpoint、同一 prompt、同一采样参数（greedy）、同样多的新 token；先预热，再重复多次取最快一次。
+- 指标：tok/s、加速比、两种模式生成的 token 是否一致。
+- 预期：上下文越长、模型越大，加速越明显；batch=1 的小模型主要受每步固定开销限制；超过 `block_size` 后窗口重建，加速消失。
+- 结果写到 [report/experiments.md](../report/experiments.md) 实验 D；测速命令见 `src/bench_kv_cache.py`。
+
 ## 验收标准
 
 ```bash
