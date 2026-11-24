@@ -107,6 +107,14 @@ def export_markdown(rows, out_md: str) -> None: ...
 - 预期：上下文越长、模型越大，加速越明显；batch=1 的小模型主要受每步固定开销限制；超过 `block_size` 后窗口重建，加速消失。
 - 结果写到 [report/experiments.md](../report/experiments.md) 实验 D；测速命令见 `src/bench_kv_cache.py`。
 
+## 实验 E：训练设置对比
+
+- 固定：s10m（6 层 / 384 维 / 6 头）、BPE-8192、3 亿 token、warmup 200 + cosine、seed 1337，有效 batch 131072 token/步。
+- 变量：学习率（1e-3 对照、5e-4、2e-3）、数据配比（混合语料 vs 只用 TinyStories）。
+- 本机（RTX 5060 Laptop）加一组 `s10m_ctl` 作为硬件对照，和云端 5090 的 `s10m` 比较。
+- 指标：加权 val、分来源 val、最大 grad norm、显存、有效训练时间、tok/s。
+- 结果写到 [report/experiments.md](../report/experiments.md) 实验 E；配置见 `configs/s10m_{ctl,lr5e-4,lr2e-3,tts}.yaml`，绘图用 `src/plot_ablation.py`。
+
 ## 验收标准
 
 ```bash
