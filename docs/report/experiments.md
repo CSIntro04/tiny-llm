@@ -8,6 +8,7 @@
 | B | 采样参数（temperature × top-k，greedy，top-p） | ✅ |
 | C | 分词方式（字符级 vs BPE） | ✅ |
 | D | KV cache 生成加速（扩展） | ✅ |
+| E | 训练设置（lr ×0.5 / ×2、只用 TinyStories） | ✅ |
 
 **总结论**
 
@@ -15,6 +16,7 @@
 2. **采样**：greedy / 低温度会整句复读，T=1.5 会编出不存在的词；top-k=50 能在高温下兜底。推荐 T=0.7–0.8 + top-k=50。
 3. **分词**：不同分词器的 loss 不能直接比，换算成 bits-per-byte 后，相同 token 预算下 BPE 明显优于字符级（SmolLM 1.367 vs 1.602）。
 4. **KV cache**：只影响生成速度，不改变模型质量。s100m 在 233-token prompt 上从约 171 提升到约 286 tok/s（约 1.67x）；s10m 因 batch=1 时每步固定开销占主导，基本持平。GPU bf16 下 cache 和 no-cache 可能有极小数值差。
+5. **训练设置**：s10m 上 lr 2e-3 比 1e-3 好（3.094 → 2.975），5e-4 欠拟合（3.256）；只用 TinyStories 把 TinyStories val 从 1.849 降到 1.559，但失去 SmolLM 能力。本机对照与云端 s10m 只差 0.13%。
 
 ---
 
@@ -257,6 +259,57 @@
 2. **s10m 基本持平。** batch=1 时每一步都有固定的 Python/内核启动开销，小模型本身计算量小，cache 省下的计算被额外拼接 cache 的开销抵消，实测在 0.9–1.0x 之间波动。
 3. **超过 `block_size` 后加速会消失。** 本项目用可学习绝对位置编码，窗口滑动时必须重建 cache，不能直接丢掉最旧的 K/V；这是位置编码方式带来的限制，换 RoPE 后可以再优化。
 4. **数值差异不是逻辑错误。** CPU fp32 下 `pytest tests/` 里 cache / no-cache 逐 token 一致；GPU bf16 下计算顺序不同，greedy 在 logits 很接近时偶发分叉，所以历史样例对比（`demo_check`、`eval_prompts`）默认关闭 cache。
+## 实验 E：训练设置对比（学习率 / 数据配比）
+
+### 设置
+
+固定：s10m（6 层 / 384 维 / 6 头，13.99M 参数），BPE-8192，上下文 512，有效 batch
+64 × 4 × 512 = 131072 token/步，2290 步 = 3 亿 token，warmup 200 + cosine，
+AdamW β=(0.9, 0.95)、weight decay 0.1、grad clip 1.0、seed 1337、bf16。
+硬件是本地 RTX 5060 Laptop 8GB；`s10m_ctl` 用来隔离本机与云端 5090 的差异。
+
+| run | 变化 | lr | 数据 |
+|---|---|---|---|
+| `s10m_ctl` | 本机对照 | 1e-3 | SmolLM + TinyStories（70.3 : 29.7） |
+| `s10m_lr5e-4` | 学习率 ×0.5 | 5e-4 | 同上 |
+| `s10m_lr2e-3` | 学习率 ×2 | 2e-3 | 同上 |
+| `s10m_tts` | 只用 TinyStories | 1e-3 | TinyStories |
+
+### 结果
+
+| run | val（加权） | SmolLM | TinyStories | 困惑度 | 有效训练 | 最大 grad norm | 显存 |
+|---|---|---|---|---|---|---|---|
+| `s10m_ctl` | **3.094** | 3.621 | 1.849 | 22.1 | 33.6 min | 1.69 | 4.74 GB |
+| `s10m_lr5e-4` | 3.256 | 3.795 | 1.982 | 25.9 | 35.4 min | 2.24 | 4.74 GB |
+| `s10m_lr2e-3` | **2.975** | 3.490 | 1.758 | 19.6 | 35.6 min | 1.57 | 4.74 GB |
+| `s10m_tts` | 1.559* | — | **1.559** | 4.8 | 33.0 min | 2.46 | 4.74 GB |
+
+\* `s10m_tts` 的加权 val 只有 TinyStories 一个来源，不能和混合数据的 3.094 直接比较；
+跨数据配比应看 `val_tinystories`。
+
+| ![](../figures/ablation_val.png) | ![](../figures/ablation_tinystories.png) |
+|---|---|
+| 混合数据的加权 val（只画 3 组，避免误比） | TinyStories val（四组都在） |
+
+本机对照和云端 `s10m`：**3.0944 vs 3.0983**，差 0.004（约 0.13%），说明同有效 batch、
+同 seed 下硬件差异可以忽略。
+
+### 结论
+
+1. **lr ×2 在固定 300M token 预算下最好。** 2.975，比 1e-3 对照低 0.119（−3.85%）；
+   到 100M token 时已经领先（3.390 vs 3.578）。没有发散，最大 grad norm 1.57，
+   比对照的 1.69 还低。
+2. **lr ×0.5 明显欠拟合。** 3.256，比对照差 0.161（+5.2%）；同样 2290 步内学习率太小，
+   loss 一直没追上。最大 grad norm 2.24，但不代表更稳，只是更新步子小、方向更一致。
+3. **只用 TinyStories 能在 TinyStories 上明显更好，但代价是丢掉 SmolLM。**
+   `val_tinystories` 从 1.849 降到 1.559（−0.290，−15.7%）；加权 val 1.559 不能和
+   混合数据的 3.094 直接比。
+4. **硬件不是问题。** 本机 5060 Laptop 的对照和云端 5090 的 `s10m` 几乎一样
+   （3.0944 vs 3.0983），说明本地 8GB 显存跑正式配置得到的结论可以迁移。
+5. **成本**：四组都在 4.74GB 显存、140–152k tok/s，单组有效训练 33–36 分钟。
+   `s10m_tts` 的墙钟 329.5 分钟包含约 5 小时电脑休眠，不是训练变慢。
+6. **局限**：每组只有一个 seed，lr ×2 的 0.119 优势还需要重复实验确认；
+   结论只适用于 s10m、300M token、这套 warmup/cosine 设置，不能直接外推到 s50m/s100m。
 
 ---
 
@@ -280,4 +333,10 @@ python src/bench_kv_cache.py --run runs/s100m --prompt_tokens 4 --max_new_tokens
 python src/bench_kv_cache.py --run runs/s100m --prompt_tokens 250 --max_new_tokens 200 --repeats 2
 # 上面的 eval_prompts 默认关闭 cache，保证和历史样例一致；只测速度时加 --use_cache
 python src/eval_prompts.py --runs runs/s100m --grid sampling --use_cache --out /tmp/samples_speed.jsonl
+# 实验 E
+python src/train.py --config configs/s10m_ctl.yaml
+python src/train.py --config configs/s10m_lr5e-4.yaml
+python src/train.py --config configs/s10m_lr2e-3.yaml
+python src/train.py --config configs/s10m_tts.yaml
+python src/plot_ablation.py --runs runs/s10m_ctl runs/s10m_lr5e-4 runs/s10m_lr2e-3 runs/s10m_tts --out docs/figures/
 ```

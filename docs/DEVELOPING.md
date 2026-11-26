@@ -137,11 +137,11 @@ conda run -n slides python docs/defense/slides/build_slides.py   # 第一次先 
 
 ## 6. 可以继续做的方向
 
-**已完成**：KV cache（模型层 `forward_cached` + 生成层 `use_cache`），结果和注意事项见 [report/experiments.md](report/experiments.md) 实验 D。
+**已完成**：KV cache（模型层 `forward_cached` + 生成层 `use_cache`），结果和注意事项见 [report/experiments.md](report/experiments.md) 实验 D；s10m 训练设置消融（学习率 ×0.5/×2、只用 TinyStories），见实验 E。
 
 下面是还可以做的方向，按从易到难排。每一项都要遵守"≤ 0.1B"和"长时间训练先确认"。
 
-1. **在 s10m 上做小消融**（几分钟一次）：学习率、warmup 长度、数据配比（`data.mix` 可以写成 `{smollm: 0.5, tinystories: 0.5}` 这样的字典，或者把 `data.sources` 改成只有 `[tinystories]`）、dropout。s10m 在 5090 上 4.6 分钟、本地约 18 分钟就能训完，适合多试几组，补充实验 B 以外的"训练设置对比"。
+1. **在 s10m 上继续做小消融**（约半小时一组）：实验 E 已经试过学习率和数据配比，还可以试 warmup 长度、dropout、`data.mix` 的其他比例（例如 `{smollm: 0.5, tinystories: 0.5}`）。s10m 在 5090 上 4.6 分钟、本地约 18 分钟就能训完，适合多试几组。
 2. **RoPE（旋转位置编码）**：不再加可学习的位置向量 `wpe`，而是把位置信息以"旋转"的方式乘进 q、k，注意力分数只依赖相对距离，长度外推更好，还省掉 `512 × C` 个参数。按上面"改模型结构"的步骤做，再用 s10m 和现有 run 对比 val loss。
 3. **中文字符级小模型**：课程建议里提到的中文路线。字符级、过滤低频字后约 5000 字的词表，数据集需要另找并先确认来源和大小。可以复用 `CharTokenizer` 和 `configs/s10m_char.yaml` 的思路。
 4. **更多评估**：例如在 TinyStories 上用固定 prompt 测重复率随 temperature 的变化曲线，或给说明文样例加事实性的人工检查表。

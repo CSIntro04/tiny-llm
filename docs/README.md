@@ -50,7 +50,7 @@ docs/
 |---|---|
 | [data.md](report/data.md) | 数据集说明：来源、许可、下载文件与 sha256、清洗与丢弃统计、分词器、token 数 |
 | [model.md](report/model.md) | 模型结构图（含 Block 内张量形状）、按组件的参数量统计、训练设置表 |
-| [experiments.md](report/experiments.md) | 实验 A/B/C 的结果、图表、生成样例、盲评和结论，以及 KV cache 加速实验 D |
+| [experiments.md](report/experiments.md) | 实验 A/B/C 的结果、图表、生成样例、盲评和结论，以及 KV cache 加速实验 D、训练设置实验 E |
 | [reproduction.md](report/reproduction.md) | 2026-11-20 在无 GPU 干净环境复现的完整步骤、实测数据、bf16 问题和改动清单 |
 
 ### defense/：答辩
